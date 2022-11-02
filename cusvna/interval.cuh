@@ -4,12 +4,15 @@
 namespace cusvna {
 
     template <typename T>
-    class Interval {
+    struct Interval {
         T a, b;
         Interval() = default;
         Interval(const Interval& other) = default;
-        Interval(const T& _a, const T& _b): a(_a), b(_b) {}
-        T length() const { return abs(b-a); };
+        Interval& operator=(const Interval& other) = default;
+        __device__ Interval(const T& _a, const T& _b): a(_a), b(_b) { assert(a <= b); }
+        __device__ T length() const { return b-a; };
+        __device__ T radius() const { return (b-a)/T(2); };
+        __device__ T midpoint() const { return (a+b)/T(2); };
     };
 
 } /* end of namespace cusvna */
