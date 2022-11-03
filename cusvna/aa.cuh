@@ -19,10 +19,10 @@ namespace cusvna {
         public:
                      __host__ __device__ AA();                                                                        /* default constructor, only to be used for array allocation */
                      __host__ __device__ AA(const AA<T,I,G,N>& other);                                                /* copy constructor */
-            explicit __host__ __device__ AA(G& index_generator);                                                      /* minimal constructor */
+            explicit __host__ __device__ AA(G& index_generator);                                                      /* minimal constructor for working AA */
             explicit __host__ __device__ AA(G& index_generator, const T& base_coefficient);                           /* base coeff constructor */
             explicit __host__ __device__ AA(const Interval<T>& interval, G& index_generator);                         /* construct from an interval */
-            explicit __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& gamma);  /* affine constructor */
+            explicit __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& gamma);  /* affine constructor to handle non linearities */
 
             explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
 
