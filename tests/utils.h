@@ -2,8 +2,16 @@
 #ifndef UTILS_H_F7USKNYL
 #define UTILS_H_F7USKNYL
 
+#include <iostream>
+#include <limits>
+
 #include "aa.h" /* libaffa */
 #include "cusvna/aa.cuh"
+
+template <typename T>
+bool close(const T& a, const T& b) {
+    return abs(b - a) <= std::numeric_limits<T>::epsilon() * max(T(1), max(a, b));
+}
 
 std::ostream& print_affa_as_cusvna(std::ostream& os, const AAF& a) {
     os << "AA(b=" << a.get_center() << ", x=[";
@@ -18,10 +26,10 @@ std::ostream& print_affa_as_cusvna(std::ostream& os, const AAF& a) {
 template <typename G, unsigned N>
 bool operator==(const AAF& lhs, const cusvna::AA<double,unsigned,G,N>& rhs) {
     bool eq = lhs.get_length() == rhs.n();
-    eq &= lhs.get_center() == rhs.x0();
+    eq &= close(lhs.get_center(), rhs.x0());
     for (int i = 0; i < rhs.n(); i++) {
         eq &= lhs.get_index(i) == rhs.idx(i);
-        eq &= lhs.get_coeff(i) == rhs.x(i);
+        eq &= close(lhs.get_coeff(i),  rhs.x(i));
     }
     return eq;
 }
@@ -37,7 +45,7 @@ void assert_equal(const cusvna::AA<double,unsigned,G,N>& lhs, const AAF& rhs) {
 }
 
 bool operator==(const interval& lhs, const cusvna::Interval<double>& rhs) {
-    return (lhs.left() == rhs.a) && (lhs.right() == rhs.b);
+    return close(lhs.left(), rhs.a) && close(lhs.right(), rhs.b);
 }
 
 void assert_equal(const cusvna::Interval<double>& lhs, const interval& rhs) {

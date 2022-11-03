@@ -18,8 +18,10 @@ namespace cusvna {
          */
         public:
             __host__ __device__ AA(G& index_generator);
+            __host__ __device__ AA(G& index_generator, const T& base_coefficient); /* base coeff constructor */
             __host__ __device__ AA(const Interval<T>& interval, G& index_generator);
             __host__ __device__ AA(const AA<T,I,G,N>& other);
+            __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& gamma); /* affine constructor */
             __host__ __device__ AA<T,I,G,N>& operator=(const AA<T,I,G,N>& other);
 
             explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert an affine form to an interval */
@@ -50,14 +52,17 @@ namespace cusvna {
 
             __host__ __device__ AA<T,I,G,N> operator-() const;
             __host__ __device__ AA<T,I,G,N> operator+() const;
+            __host__ __device__ AA<T,I,G,N> reciprocal() const;  /* multiplicative inverse */
 
             __host__ __device__ AA<T,I,G,N>& operator-=(const T& other);
             __host__ __device__ AA<T,I,G,N>& operator+=(const T& other);
             __host__ __device__ AA<T,I,G,N>& operator*=(const T& other);
+            __host__ __device__ AA<T,I,G,N>& operator/=(const T& other);
 
             __host__ __device__ AA<T,I,G,N>& operator-=(const AA<T,I,G,N>& other);
             __host__ __device__ AA<T,I,G,N>& operator+=(const AA<T,I,G,N>& other);
             __host__ __device__ AA<T,I,G,N>& operator*=(const AA<T,I,G,N>& other);
+            __host__ __device__ AA<T,I,G,N>& operator/=(const AA<T,I,G,N>& other);
         private:
             T m_coeffs[N+1]; 
             I m_indices[N+1];
@@ -83,12 +88,25 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const AA<T,I,G,N>& lhs, const T& rhs);
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const T& lhs, const AA<T,I,G,N>& rhs);
     
+    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator/(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
+    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator/(const AA<T,I,G,N>& lhs, const T& rhs);
+    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const T& lhs, const AA<T,I,G,N>& rhs);
+    
+    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ sqrt(const AA<T,I,G,N>& val);
+    
 
     /* implementation */   
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(G& index_generator) : 
         m_coeffs{0}, m_indices{0}, m_index_generator(index_generator)  {
         static_assert(N>=0, "N<0");
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N>::AA(G& index_generator, const T& base_coefficient) : 
+        m_coeffs{0}, m_indices{0}, m_index_generator(index_generator)  {
+        static_assert(N>=0, "N<0");
+        this->x0() = base_coefficient;
     }
     
     template <typename T, typename I, typename G, I N>
@@ -104,6 +122,19 @@ namespace cusvna {
         m_coeffs{0}, m_indices{0}, m_index_generator(other.index_generator()) {
         static_assert(N>=0, "N<0");
         *this = other;
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& delta) : 
+        m_coeffs{0}, m_indices{0}, m_index_generator(base.index_generator()) {
+        static_assert(N>=0, "N<0");
+        this->x0() = alpha * base.x0() + beta;
+        this->n() = base.n();
+        for (I i = 0; i < base.n(); ++i) {
+            this->idx(i) = base.idx(i);
+            this->x(i) = alpha * base.x(i);
+        }
+        this->append_new_symbol(delta);
     }
 
     template <typename T, typename I, typename G, I N>
@@ -386,6 +417,74 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N> operator*(const T& lhs, const AA<T,I,G,N>& rhs) {
         return +rhs *= lhs;
+    }
+    
+
+    /*  OPERATOR /  */
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N> operator/(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
+        return lhs * rhs.reciprocal();
+    }
+
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator/=(const T& other) {
+        return inplace_unary_op(*this, [&](T& x){ x /= other; });
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator/=(const AA<T,I,G,N>& other) {
+        return *this = *this / other;
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N> operator/(const AA<T,I,G,N>& lhs, const T& rhs) {
+        return +lhs *= T(1)/rhs;
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N> operator/(const T& lhs, const AA<T,I,G,N>& rhs) {
+        return lhs * rhs.reciprocal();
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    AA<T,I,G,N> __host__ __device__ AA<T,I,G,N>::reciprocal() const {
+        Interval<T> interval(*this);
+        T a = interval.a;
+        T b = interval.b;
+
+        if (a <= T(0) && b >= T(0)) {
+            return AA<T,I,G,N>(this->index_generator(), cuda::std::numeric_limits<T>::infinity());
+        }
+
+        const T aa = ::fabs(a);
+        const T bb = ::fabs(b);
+
+        a = min(aa, bb);
+        b = max(aa, bb);
+        
+        const T alpha = -T(1)/(b*b);
+        const Interval<T> ii(T(1)/a - alpha*a, T(2)/b);
+        const T beta = (interval.a < T(0) ? T(-1) : T(1)) * ii.midpoint();
+        const T delta = ii.radius();
+        
+        return AA<T,I,G,N>(*this, alpha, beta, delta);
+    }
+
+    
+    /* SQRT */
+    template <typename T, typename I, typename G, I N>
+    AA<T,I,G,N> __host__ __device__ sqrt(const AA<T,I,G,N>& val) {
+        Interval<T> interval(val);
+        const T a = max(interval.a, T(0));  /* we assume val is always positive */
+        const T b = max(interval.b, T(0));  /* we assume val is always positive */
+
+        const T t = ::sqrt(a) + ::sqrt(b);
+        const T alpha = T(1)/t;
+        const T beta = t/T(8) + ::sqrt(a*b)/(T(2)*t);
+        const T rdelta = ::sqrt(b) - ::sqrt(a);
+        const T delta = rdelta * rdelta / (T(8)*t);
+
+        return AA<T,I,G,N>(val, alpha, beta, delta);
     }
 
 } /* end of namespace cusvna */
