@@ -17,23 +17,21 @@ namespace cusvna {
          *    Sparse representation with at most N different noise symbols 
          */
         public:
-            __host__ __device__ AA(G& index_generator);
-            __host__ __device__ AA(G& index_generator, const T& base_coefficient); /* base coeff constructor */
-            __host__ __device__ AA(const Interval<T>& interval, G& index_generator);
-            __host__ __device__ AA(const AA<T,I,G,N>& other);
-            __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& gamma); /* affine constructor */
-            __host__ __device__ AA<T,I,G,N>& operator=(const AA<T,I,G,N>& other);
+                     __host__ __device__ AA();                                                                        /* default constructor, only to be used for array allocation */
+                     __host__ __device__ AA(const AA<T,I,G,N>& other);                                                /* copy constructor */
+            explicit __host__ __device__ AA(G& index_generator);                                                      /* minimal constructor */
+            explicit __host__ __device__ AA(G& index_generator, const T& base_coefficient);                           /* base coeff constructor */
+            explicit __host__ __device__ AA(const Interval<T>& interval, G& index_generator);                         /* construct from an interval */
+            explicit __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& gamma);  /* affine constructor */
 
-            explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert an affine form to an interval */
-            
+            explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
+
             __host__ __device__ const T& x0() const;             /* base coefficient x0 */
             __host__ __device__ const I& n() const;              /* number of active noise symbols 0 <= n <= N. */
             __host__ __device__ const T* x() const;              /* x is the magnitude vector of the uncertainty coerresponding to noise symbols. */
             __host__ __device__ const I* idx() const;            /* idx represent the index vector of noise symbols, idx is assumed to be sorted. */
             __host__ __device__ const T& x(const I& i) const;    /* x(i) is the magnitude of the uncertainty coerresponding to noise symbol idx[i]. */
             __host__ __device__ const I& idx(const I& i) const;  /* idx(i) represent the index of noise symbol number i, idx is assumed to be sorted. */
-            __host__ __device__ const I& operator()(const I& i) const;  /* alias of idx(i) */
-            __host__ __device__ const T& operator[](const I& i) const;  /* alias of x(i)   */
 
             __host__ __device__ T& x0();
             __host__ __device__ I& n();
@@ -41,14 +39,21 @@ namespace cusvna {
             __host__ __device__ I* idx();
             __host__ __device__ T& x(const I& i);
             __host__ __device__ I& idx(const I& i);
-            __host__ __device__ I& operator()(const I& i);
-            __host__ __device__ T& operator[](const I& i);
             __host__ __device__ G& index_generator() const;
 
             __host__ __device__ AA<T,I,G,N>& append_symbol(const I& symbol_index, const T& magnitude);
             __host__ __device__ AA<T,I,G,N>& append_new_symbol(const T& magnitude);
 
             __host__ __device__ T radius() const; /* sum of absolute symbol magnitudes */
+            __host__ __device__ Interval<T> interval() const; /* cast to an interval */
+            
+            __host__ __device__ AA<T,I,G,N>& operator=(const AA<T,I,G,N>& other);
+            
+            __host__ __device__ const I& operator()(const I& i) const;  /* alias of idx(i) */
+            __host__ __device__ const T& operator[](const I& i) const;  /* alias of x(i)   */
+
+            __host__ __device__ I& operator()(const I& i);
+            __host__ __device__ T& operator[](const I& i);
 
             __host__ __device__ AA<T,I,G,N> operator-() const;
             __host__ __device__ AA<T,I,G,N> operator+() const;
@@ -288,6 +293,11 @@ namespace cusvna {
             r += abs(this->x(i));
         }
         return r;
+    };
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ Interval<T> AA<T,I,G,N>::interval() const {
+        return Interval<T>(*this);
     };
     
     /* operators */
