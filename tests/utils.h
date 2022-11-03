@@ -36,4 +36,16 @@ void assert_equal(const cusvna::AA<double,unsigned,G,N>& lhs, const AAF& rhs) {
     assert(false);
 }
 
+bool operator==(const interval& lhs, const cusvna::Interval<double>& rhs) {
+    return (lhs.left() == rhs.a) && (lhs.right() == rhs.b);
+}
+
+void assert_equal(const cusvna::Interval<double>& lhs, const interval& rhs) {
+    if (rhs == lhs) { return; }
+    std::cerr << "Interval are different:" << std::endl;
+    std::cerr << "   cusvna: " << lhs << std::endl;
+    std::cerr << "  libaffa: [" << rhs.left() << ", " << rhs.right() << ']' << std::endl;
+    assert(false);
+}
+
 #endif /* end of include guard: UTILS_H_F7USKNYL */

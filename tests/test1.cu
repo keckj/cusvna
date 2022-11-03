@@ -38,4 +38,5 @@ int main() {
     AA  z  = (10.0+x+r)*(10.0-x+s);
     AAF z_ = (10.0+x_+r_)*(10.0-x_+s_);
     assert_equal(z, z_);
+    assert_equal(Interval(z), z_.convert());
 }
