@@ -1,7 +1,7 @@
 #ifndef AA_H_TLKSOS6P
 #define AA_H_TLKSOS6P
 
-#include <cuda/std/cassert>
+#include <cuda/std/functional>
 
 #include "cusvna/interval.cuh"
 #include "cusvna/index.cuh"
@@ -11,10 +11,11 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N>
     class AA {
         /* Affine Arithmetic with fixed number of active noise symbols:
-                Coefficients type T
-                Integer type I
-                Symbol index generator type G
-                Sparse representation with at most N noise symbols */
+         *    Coefficients type T
+         *    Integer type I
+         *    Symbol index generator type G
+         *    Sparse representation with at most N noise symbols 
+         */
         public:
             __device__ AA(G& index_generator);
             __device__ AA(const Interval<T>& interval, G& index_generator);
@@ -60,6 +61,12 @@ namespace cusvna {
     };
         
     /* operators */
+    template <typename T, typename I, typename G, I N, typename F>
+    __device__ AA<T,I,G,N>& inplace_unary_op(AA<T,I,G,N>& input, F&& op);
+    
+    template <typename T, typename I, typename G, I N, typename F>
+    __device__ AA<T,I,G,N> binary_op(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs, F&& op, const T& identity);
+
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __device__ operator+(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __device__ operator+(const AA<T,I,G,N>& lhs, const T& rhs);
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __device__ operator+(const T& lhs, const AA<T,I,G,N>& rhs);
@@ -82,6 +89,7 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N>::AA(const Interval<T>& interval, G& index_generator):
         m_coeffs{0}, m_indices{0}, m_index_generator(index_generator) {
+        static_assert(N>=0, "N<0");
         this->x0() = interval.midpoint();
         this->append_new_symbol(interval.radius());
     }
@@ -104,6 +112,11 @@ namespace cusvna {
             }
         }
         return *this;
+    }
+    
+    template <typename T, typename I, typename G, I N>
+    __device__ G& AA<T,I,G,N>::index_generator() const {
+        return this->m_index_generator;
     }
     
     template <typename T, typename I, typename G, I N>
@@ -192,27 +205,21 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> AA<T,I,G,N>::operator+() const {
-        return AA<T,I,G,N>(*this);
+        AA<T,I,G,N> out(*this);
+        inplace_unary_op(out, [](T& a){ return +a; });
+        return out;
     }
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> AA<T,I,G,N>::operator-() const {
-        return AA<T,I,G,N>(*this) * T(-1);
+        AA<T,I,G,N> out(*this);
+        inplace_unary_op(out, [](T& a){ return -a; });
+        return out;
     }
             
-            
-    template <typename T, typename I, typename G, I N>
-    __device__ G& AA<T,I,G,N>::index_generator() const {
-        return this->m_index_generator;
-    }
-
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N>& AA<T,I,G,N>::append_symbol(const I& symbol_index, const T& magnitude) {
         I i = this->n();
-        printf("append %i at index %i\n", symbol_index, this->n());
-        if (i>0) {
-            printf("last symbol index is %i\n", this->idx(i-1));
-        }
         assert(i < N);
         assert(i==0 || this->idx(i-1) < symbol_index);
         ++this->n();
@@ -235,34 +242,46 @@ namespace cusvna {
     
     
     /* operators */
-    template <typename T, typename I, typename G, I N>
-    __device__ AA<T,I,G,N> operator+(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
+    template <typename T, typename I, typename G, I N, typename F>
+    __device__ AA<T,I,G,N>& inplace_unary_op(AA<T,I,G,N>& input, F&& op) {
+        op(input.x0());
+        for (I i = 0; i < input.n(); ++i) {
+            op(input.x(i));
+        }
+        return input;
+    }
+
+    template <typename T, typename I, typename G, I N, typename F>
+    __device__ AA<T,I,G,N> binary_op(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs, F&& op, const T& identity) {
         AA<T,I,G,N> out(lhs.index_generator());
+        out.x0() = op(lhs.x0(), rhs.x0());
+
         const I lhs_n(lhs.n()), rhs_n(rhs.n());
-        out.x0() = lhs.x0() + rhs.x0();
         I lhs_i(0), rhs_i(0);
-        printf("ADDITION\n", lhs_n, rhs_n);
         while(lhs_i < lhs_n || rhs_i < rhs_n) {
-            const I lhs_idx(lhs_i >= lhs_n ? I(-1) : lhs(lhs_i));
-            const I rhs_idx(rhs_i >= rhs_n ? I(-1) : rhs(rhs_i));
+            const I lhs_idx(lhs_i >= lhs_n ? G::last_symbol_index : lhs(lhs_i));
+            const I rhs_idx(rhs_i >= rhs_n ? G::last_symbol_index : rhs(rhs_i));
             const bool le = lhs_idx <= rhs_idx;
             const bool ge = lhs_idx >= rhs_idx;
-            printf("lhs_i=%i/%i  rhs_i=%i/%i  lhs_idx=%i  rhs_idx=%i  ge=%i  le=%i", lhs_i, lhs_n, rhs_i, rhs_n, lhs_idx, rhs_idx, I(le), I(ge));
-            printf(" => append symbol %i\n", (le ? lhs_idx : rhs_idx));
-            out.append_symbol( (le ? lhs_idx : rhs_idx), (le ? lhs[lhs_i] : T(0)) + (ge ? rhs[rhs_i] : T(0)));
+            /*printop("lhs_i=%i/%i  rhs_i=%i/%i  lhs_idx=%i  rhs_idx=%i  ge=%i  le=%i", lhs_i, lhs_n, rhs_i, rhs_n, lhs_idx, rhs_idx, I(le), I(ge));*/
+            /*printop(" => append symbol %i\n", (le ? lhs_idx : rhs_idx));*/
+            out.append_symbol( (le ? lhs_idx : rhs_idx), op((le ? lhs[lhs_i] : identity), (ge ? rhs[rhs_i] : identity)));
             lhs_i += le;
             rhs_i += ge;
         }
         return out;
-    };
+    }
+        
+
+    /*  OPERATOR +  */
+    template <typename T, typename I, typename G, I N>
+    __device__ AA<T,I,G,N> operator+(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
+        return binary_op(lhs, rhs, [](const T& a, const T& b){ return a + b; }, T(0));
+    }
 
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator+=(const T& other) {
-        this->x0() += other;
-        for (I i = 0; i < this->n(); ++i) {
-            this->x(i) += other;
-        }
-        return *this;
+        return inplace_unary_op(*this, [&](T& x){ x += other; });
     }
     
     template <typename T, typename I, typename G, I N>
@@ -272,39 +291,24 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator+(const AA<T,I,G,N>& lhs, const T& rhs) {
-        AA<T,I,G,N> out(lhs);
-        return out += rhs;
-    };
+        return AA<T,I,G,N>(lhs) += rhs;
+    }
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator+(const T& lhs, const AA<T,I,G,N>& rhs) {
-        AA<T,I,G,N> out(rhs);
-        return out += lhs;
-    };
-
+        return AA<T,I,G,N>(rhs) += lhs;
+    }
     
+
+    /*  OPERATOR -  */
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator-(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        AA<T,I,G,N> out(lhs.x0() - rhs.x0());
-        I lhs_i(0), rhs_i(0);
-        while(lhs_i < lhs.n() || rhs_i < rhs.n()) {
-            const I lhs_idx(lhs(lhs_i)), rhs_idx(rhs(rhs_i));
-            const bool le = lhs_idx <= rhs_idx;
-            const bool ge = lhs_idx >= rhs_idx;
-            out.append_symbol( (le ? lhs_idx : rhs_idx), le*lhs[lhs_i] - ge*rhs[rhs_i]);
-            lhs_i += le;
-            rhs_i += ge;
-        }
-        return out;
-    };
+        return binary_op(lhs, rhs, [](const T& a, const T& b){ return a - b; }, T(0));
+    }
 
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator-=(const T& other) {
-        this->x0() -= other;
-        for (I i = 0; i < this->n(); ++i) {
-            this->x(i) -= other;
-        }
-        return *this;
+        return inplace_unary_op(*this, [&](T& x){ x -= other; });
     }
     
     template <typename T, typename I, typename G, I N>
@@ -314,29 +318,24 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator-(const AA<T,I,G,N>& lhs, const T& rhs) {
-        AA<T,I,G,N> out(+lhs);
-        return out -= rhs;
-    };
+        return +lhs -= rhs;
+    }
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator-(const T& lhs, const AA<T,I,G,N>& rhs) {
-        AA<T,I,G,N> out(-rhs);
-        return out += lhs;
-    };
-    
+        return -rhs += lhs;
+    }
 
+    
+    /*  OPERATOR *  */
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        assert(false);
-    };
+        assert(false); /* not implemented */
+    }
 
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator*=(const T& other) {
-        this->x0() *= other;
-        for (I i = 0; i < this->n(); ++i) {
-            this->x(i) *= other;
-        }
-        return *this;
+        return inplace_unary_op(*this, [&](T& x){ x *= other; });
     }
     
     template <typename T, typename I, typename G, I N>
@@ -346,15 +345,13 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const T& rhs) {
-        AA<T,I,G,N> out(lhs);
-        return out *= rhs;
-    };
+        return +lhs *= rhs;
+    }
     
     template <typename T, typename I, typename G, I N>
     __device__ AA<T,I,G,N> operator*(const T& lhs, const AA<T,I,G,N>& rhs) {
-        AA<T,I,G,N> out(rhs);
-        return out *= lhs;
-    };
+        return +rhs *= lhs;
+    }
 
 } /* end of namespace cusvna */
 

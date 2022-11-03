@@ -4,7 +4,7 @@
 using T = float;
 using I = unsigned char;
 using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 4;
+constexpr I N = 2;
     
 using AAF = cusvna::AA<T,I,G,N>;
 using interval = cusvna::Interval<T>;
@@ -23,7 +23,7 @@ __global__ void kernel() {
   AAF temp1 = (10.0f+x+r);
   AAF temp2 = (10.0f-x+s);
 
-  AAF z = (10.0f+x+r)*(10.0f-x+s);
+  /*AAF z = (10.0f+x+r)*(10.0f-x+s);*/
 }
 
 int main()
