@@ -14,7 +14,7 @@ namespace cusvna {
          *    Coefficients type T
          *    Integer type I
          *    Symbol index generator type G
-         *    Sparse representation with at most N noise symbols 
+         *    Sparse representation with at most N different noise symbols 
          */
         public:
             __host__ __device__ AA(G& index_generator);
@@ -44,6 +44,8 @@ namespace cusvna {
             __host__ __device__ AA<T,I,G,N>& append_symbol(const I& symbol_index, const T& magnitude);
             __host__ __device__ AA<T,I,G,N>& append_new_symbol(const T& magnitude);
 
+            __host__ __device__ T radius() const; /* sum of absolute symbol magnitudes */
+
             __host__ __device__ AA<T,I,G,N> operator-() const;
             __host__ __device__ AA<T,I,G,N> operator+() const;
 
@@ -57,7 +59,7 @@ namespace cusvna {
         private:
             T m_coeffs[N+1]; 
             I m_indices[N+1];
-            G& m_index_generator; /* symbol index generator, no static variables here */
+            G& m_index_generator; /* symbol index generator, no static members in device code */
     };
         
     /* operators */
@@ -205,15 +207,13 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N> AA<T,I,G,N>::operator+() const {
-        AA<T,I,G,N> out(*this);
-        inplace_unary_op(out, [](T& a){ return +a; });
-        return out;
+        return AA<T,I,G,N>(*this);
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N> AA<T,I,G,N>::operator-() const {
         AA<T,I,G,N> out(*this);
-        inplace_unary_op(out, [](T& a){ return -a; });
+        inplace_unary_op(out, [](T& a){ a = -a; });
         return out;
     }
             
@@ -239,7 +239,15 @@ namespace cusvna {
         this->x(i) = magnitude;
         return *this;
     }
-    
+            
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ T AA<T,I,G,N>::radius() const {
+        T r(0);
+        for (I i = 0; i < this->n(); ++i) {
+            r += abs(this->x(i));
+        }
+        return r;
+    };
     
     /* operators */
     template <typename T, typename I, typename G, I N, typename F>
@@ -279,7 +287,8 @@ namespace cusvna {
 
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator+=(const T& other) {
-        return inplace_unary_op(*this, [&](T& x){ x += other; });
+        this->x0() += other;
+        return *this;
     }
     
     template <typename T, typename I, typename G, I N>
@@ -306,7 +315,7 @@ namespace cusvna {
 
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator-=(const T& other) {
-        return inplace_unary_op(*this, [&](T& x){ x -= other; });
+        this->x0() -= other;
     }
     
     template <typename T, typename I, typename G, I N>
@@ -328,7 +337,25 @@ namespace cusvna {
     /*  OPERATOR *  */
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        assert(false); /* not implemented */
+        AA<T,I,G,N> out(lhs.index_generator());
+
+        const T lhs_x0(lhs.x0()), rhs_x0(rhs.x0());
+        const I lhs_n(lhs.n()), rhs_n(rhs.n());
+        out.x0() = lhs_x0 * rhs_x0;
+        I lhs_i(0), rhs_i(0);
+        while(lhs_i < lhs_n || rhs_i < rhs_n) {
+            const I lhs_idx(lhs_i >= lhs_n ? G::last_symbol_index : lhs(lhs_i));
+            const I rhs_idx(rhs_i >= rhs_n ? G::last_symbol_index : rhs(rhs_i));
+            const bool le = lhs_idx <= rhs_idx;
+            const bool ge = lhs_idx >= rhs_idx;
+            out.append_symbol( (le ? lhs_idx : rhs_idx), 
+                    (le ? lhs[lhs_i] : T(0)) * rhs_x0
+                  + (ge ? rhs[rhs_i] : T(0)) * lhs_x0);
+            lhs_i += le;
+            rhs_i += ge;
+        }
+        out.append_new_symbol(lhs.radius() * rhs.radius());
+        return out;
     }
 
     template <typename T, typename I, typename G, I N>

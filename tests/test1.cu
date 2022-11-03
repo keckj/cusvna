@@ -10,7 +10,7 @@
 using T = double;
 using I = unsigned;
 using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 2;
+constexpr I N = 4;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
@@ -30,10 +30,12 @@ int main() {
     assert_equal(s, s_);
     
     AA temp1(10.0+x+r); AAF temp1_(10.0+x_+r_);
-    AA temp2(10.0-x+s); AAF temp2_(10.0-x_+s_);
+    AA temp2(10.0-x-s); AAF temp2_(10.0-x_-s_);
     
     assert_equal(temp1, temp1_);
     assert_equal(temp2, temp2_);
 
-    /*AAF z = (10.0f+x+r)*(10.0f-x+s);*/
+    AA  z  = (10.0+x+r)*(10.0-x+s);
+    AAF z_ = (10.0+x_+r_)*(10.0-x_+s_);
+    assert_equal(z, z_);
 }
