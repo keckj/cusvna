@@ -9,8 +9,8 @@ namespace cusvna {
 template <typename I, I lsi = cuda::std::numeric_limits<I>::max()>
 class LocalThreadIndex {
     public:
-        __device__ LocalThreadIndex(): idx(0) {}
-        __device__ I operator()() { return this->new_symbol(); };
+        __host__ __device__ LocalThreadIndex(bool can_generate_new_symbols = true): idx(can_generate_new_symbols ? 0 : last_symbol_index) {}
+        __host__ __device__ I operator()() { return this->new_symbol(); };
         static constexpr I last_symbol_index = lsi;
 
     private:
@@ -19,7 +19,7 @@ class LocalThreadIndex {
         LocalThreadIndex(LocalThreadIndex&& other) = delete;
         LocalThreadIndex& operator=(const LocalThreadIndex& other) = delete;
         LocalThreadIndex& operator=(LocalThreadIndex&& other) = delete;
-        __device__ I new_symbol() {
+        __host__ __device__ I new_symbol() {
             assert(idx != last_symbol_index);  /* last index is reserved for implementation detail */
             return idx++;
         }

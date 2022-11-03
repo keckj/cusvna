@@ -1,0 +1,3 @@
+[submodule "ext/libaffa"]
+	path = ext/libaffa
+	url = https://github.com/ogay/libaffa
