@@ -356,7 +356,12 @@ namespace cusvna {
 template <typename T, typename I, typename G, I N>
 __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a)
 {
-    os << a.n();
+    os << "AA(b=" << a.x0() << ", x=[";
+    for (I i = 0; i < a.n(); ++i) {
+        os << a.idx(i) << ": " << a.x(i);
+        if (i != a.n()-1) { os << ", "; }
+    }
+    os << "])";
     return os;
 }
 
