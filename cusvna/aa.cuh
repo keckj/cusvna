@@ -71,7 +71,7 @@ namespace cusvna {
         private:
             T m_coeffs[N+1]; 
             I m_indices[N+1];
-            G& m_index_generator; /* symbol index generator, no static members in device code */
+            G* m_index_generator; /* symbol index generator, no static members in device code */
     };
         
     /* operators */
@@ -102,21 +102,27 @@ namespace cusvna {
 
     /* implementation */   
     template <typename T, typename I, typename G, I N>
+    __host__ __device__ AA<T,I,G,N>::AA() : 
+        m_coeffs{0}, m_indices{0}, m_index_generator(nullptr)  {
+        static_assert(N>=0, "N<0");
+    }
+
+    template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(G& index_generator) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(index_generator)  {
+        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator)  {
         static_assert(N>=0, "N<0");
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(G& index_generator, const T& base_coefficient) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(index_generator)  {
+        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator)  {
         static_assert(N>=0, "N<0");
         this->x0() = base_coefficient;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const Interval<T>& interval, G& index_generator):
-        m_coeffs{0}, m_indices{0}, m_index_generator(index_generator) {
+        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator) {
         static_assert(N>=0, "N<0");
         this->x0() = interval.midpoint();
         this->append_new_symbol(interval.radius());
@@ -124,14 +130,14 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& other) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(other.index_generator()) {
+        m_coeffs{0}, m_indices{0}, m_index_generator(&other.index_generator()) {
         static_assert(N>=0, "N<0");
         *this = other;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& base, const T& alpha, const T& beta, const T& delta) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(base.index_generator()) {
+        m_coeffs{0}, m_indices{0}, m_index_generator(&base.index_generator()) {
         static_assert(N>=0, "N<0");
         this->x0() = alpha * base.x0() + beta;
         this->n() = base.n();
@@ -164,7 +170,10 @@ namespace cusvna {
 
     template <typename T, typename I, typename G, I N>
     __host__ __device__ G& AA<T,I,G,N>::index_generator() const {
-        return this->m_index_generator;
+        /* m_index_generator is nullptr if and only if index_generator is used with 
+           the default constructor. Default constructor should only be used for allocation */
+        assert(m_index_generator != nullptr);
+        return *this->m_index_generator;
     }
     
     template <typename T, typename I, typename G, I N>
