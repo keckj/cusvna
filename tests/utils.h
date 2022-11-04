@@ -10,7 +10,7 @@
 
 template <typename T>
 bool close(const T& a, const T& b) {
-    return abs(b - a) <= std::numeric_limits<T>::epsilon() * max(T(1), max(a, b));
+    return abs(b - a) <= 10 * std::numeric_limits<T>::epsilon() * max(T(1), max(a, b));
 }
 
 std::ostream& print_affa_as_cusvna(std::ostream& os, const AAF& a) {
@@ -35,9 +35,15 @@ bool operator==(const AAF& lhs, const cusvna::AA<double,unsigned,G,N>& rhs) {
 }
 
 template <typename G, unsigned N>
-void assert_equal(const cusvna::AA<double,unsigned,G,N>& lhs, const AAF& rhs) {
+void assert_equal(const cusvna::AA<double,unsigned,G,N>& lhs, const AAF& rhs, 
+        const std::string& msg = "") {
     if (rhs == lhs) { return; }
-    std::cerr << "Affine forms are different:" << std::endl;
+    if (msg == "") {
+        std::cerr << "Affine forms are different:" << std::endl;
+    }
+    else {
+        std::cerr << "Affine forms for '" << msg << "' are different:" << std::endl;
+    }
     std::cerr << "   cusvna: " << lhs << std::endl;
     std::cerr << "  libaffa: ";
     print_affa_as_cusvna(std::cerr, rhs) << std::endl << std::endl;
