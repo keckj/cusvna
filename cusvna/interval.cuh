@@ -1,6 +1,10 @@
 #ifndef INTERVAL_H_V9EGLT0S
 #define INTERVAL_H_V9EGLT0S
 
+#ifndef __CUDACC_RTC__
+#include <ostream>
+#endif
+
 #include <cuda/std/cassert>
 
 namespace cusvna {
@@ -17,11 +21,13 @@ namespace cusvna {
         __host__ __device__ T midpoint() const { return (a+b)/T(2); };
     };
 
+#ifndef __CUDACC_RTC__
     template <typename T>
     __host__ std::ostream& operator<<(std::ostream& os, const Interval<T>& interval) {
         os << '[' << interval.a << ", " << interval.b << ']';
         return os;
     }
+#endif
 
 } /* end of namespace cusvna */
 

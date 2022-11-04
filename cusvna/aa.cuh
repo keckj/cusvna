@@ -1,6 +1,10 @@
 #ifndef AA_H_TLKSOS6P
 #define AA_H_TLKSOS6P
 
+#ifndef __CUDACC_RTC__
+#include <ostream>
+#endif
+
 #include <cuda/std/functional>
 
 #include "cusvna/interval.cuh"
@@ -114,7 +118,9 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ tan(const AA<T,I,G,N>& val);
     template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ cotan(const AA<T,I,G,N>& val);
     
+#ifndef __CUDACC_RTC__
     template <typename T, typename I, typename G, I N> __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a);
+#endif
     
 
     /* implementation */   
@@ -614,6 +620,7 @@ namespace cusvna {
         return cos(val) / sin(val);
     }
 
+#ifndef __CUDACC_RTC__
     template <typename T, typename I, typename G, I N>
     __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a)
     {
@@ -625,6 +632,7 @@ namespace cusvna {
         os << "])";
         return os;
     }
+#endif
 
 } /* end of namespace cusvna */
     
