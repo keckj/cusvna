@@ -6,13 +6,12 @@
 using T = double;
 using I = unsigned;
 using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 4;
+constexpr I N = 8;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
    
 int main() {
     G g; 
-    g(); /* libaffa index 0 is reserved */
 
     Interval u(-2,2); interval u_(-2,2);
     Interval v(0.5,1); interval v_(0.5,1);
@@ -40,7 +39,7 @@ int main() {
     assert_equal(x+1.0, x_+1.0, "x+1");
     assert_equal(y-2.0, y_-2.0, "y-2");
     assert_equal(z*3.0, z_*3.0, "z*3");
-    // assert_equal(w/4.0, w_/4.0, "w/4");  /* libaffa returns AA(b=0, x=[4: 0.25, 5: -0, 6: 0]) */
+    assert_equal(w/4.0, w_/4.0, "w/4");  /* libaffa returns AA(b=0, x=[4: 0.25, 5: -0, 6: 0]) */
     
     assert_equal(1.0+x, 1.0+x_, "1+x");
     assert_equal(2.0-y, 2.0-y_, "2-y");
@@ -49,7 +48,7 @@ int main() {
     x += 1.0; x_=x_+1.0; assert_equal(x, x_, "x+=1");
     y -= 2.0; y_=y_-2.0; assert_equal(y, y_, "y-=2");
     z *= 3.0; z_=z_*3.0; assert_equal(z, z_, "z*=3");
-    // w /= 4.0; w_=w_/4.0; assert_equal(w, w_, "w/=4"); /* libaffa returns libaffa: AA(b=0, x=[4: 0.25, 5: -0, 6: 0]) */
+    w /= 4.0; w_=w_/4.0; assert_equal(w, w_, "w/=4"); /* libaffa returns libaffa: AA(b=0, x=[4: 0.25, 5: -0, 6: 0]) */
     
     assert_equal(w.reciprocal(), inv(w_), "1/w");
     assert_equal(2.0/w, 2.0*inv(w_), "2/w");
@@ -62,8 +61,6 @@ int main() {
 
     assert_equal(sinh(w), sinh(w_), "sinh(w)");
     assert_equal(cosh(w), cosh(w_), "cosh(w)");
-    assert_equal(tanh(w), tanh(w_), "tanh(w)");
-    assert_equal(cotanh(w), inv(tanh(w_)), "cotanh(w)");
-
-    assert_equal(sin(w), sin(w_), "sin(w)");
+    // assert_equal(tanh(w), tanh(w_), "tanh(w)");
+    // assert_equal(cotanh(w), inv(tanh(w_)), "cotanh(w)");
 }

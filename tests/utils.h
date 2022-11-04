@@ -25,11 +25,35 @@ std::ostream& print_affa_as_cusvna(std::ostream& os, const AAF& a) {
 
 template <typename G, unsigned N>
 bool operator==(const AAF& lhs, const cusvna::AA<double,unsigned,G,N>& rhs) {
-    bool eq = lhs.get_length() == rhs.n();
-    eq &= close(lhs.get_center(), rhs.x0());
-    for (int i = 0; i < rhs.n(); i++) {
-        eq &= lhs.get_index(i) == rhs.idx(i);
-        eq &= close(lhs.get_coeff(i),  rhs.x(i));
+    bool eq = close(lhs.get_center(), rhs.x0());
+
+    const unsigned lhs_n(lhs.get_length()), rhs_n(rhs.n());
+    int i_lhs(0), i_rhs(0);
+    double x_lhs, x_rhs;
+    while(eq && i_lhs < lhs_n && i_rhs < rhs_n) {
+        x_lhs = lhs.get_coeff(i_lhs);
+        x_rhs = rhs.x(i_rhs);
+        if (close(x_lhs, x_rhs)) {
+            i_lhs++;
+            i_rhs++;
+        }
+        else if (close(x_lhs, 0.0)) {
+            i_lhs++;
+        }
+        else if (close(x_rhs, 0.0)) {
+            i_rhs++;
+        }
+        else {
+            eq = false;
+        }
+    }
+    while(eq && i_lhs < lhs_n) {
+        eq &= close(lhs.get_coeff(i_lhs), 0.0);
+        i_lhs++;
+    }
+    while(eq && i_rhs < rhs_n) {
+        eq &= close(rhs.x(i_rhs), 0.0);
+        i_rhs++;
     }
     return eq;
 }
