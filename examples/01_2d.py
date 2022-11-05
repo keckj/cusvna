@@ -52,16 +52,15 @@ if __name__ == "__main__":
     kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('kernel',))
 
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
-    fname = f'Bruteforce {fname}'
     logger.info(f"Generating grids for function {fname}...")
 
-    levels = [2,3,4,5,6,7]
+    levels = [-1,2,3,4,5,6]
     xmin, xmax = -2, 2
     ymin, ymax = -2, 2
     def f(x,y):
         return x*x + y*y + x*y - (x*y)**2/2 - 0.25
 
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(10,10))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(14,10))
     fig.suptitle(fname)
 
     x = cp.linspace(xmin, xmax, 1024)[None,:]
@@ -69,25 +68,31 @@ if __name__ == "__main__":
     z = f(x,y).get()
 
     for level, ax in zip(levels, axes.ravel()):
-        N = 2**level
-        logger.info(f"  computing level={level} with {N} intervals...")
-        s = cp.empty((N,N), dtype=np.uint8)
 
-        B = 16
-        G = (N+B-1)//B
-        assert B*B < kernel.max_threads_per_block
-        kernel((B,B), (G,G), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
-        s = s.get()
-
-        ax.set_title(f'level={level}')
-        ax.imshow(z, zorder=0, vmin=-4, vmax=+4, cmap='seismic',
-                extent=[xmin, xmax, ymin, ymax], origin='lower')
-        ax.imshow(s + 10*(s==0), zorder=0, vmin=0, vmax=10, cmap='Set1',
-                extent=[xmin, xmax, ymin, ymax], origin='lower')
         ax.contour(z, levels=[0], zorder=1, colors=['k'],
                 extent=[xmin, xmax, ymin, ymax], origin='lower')
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)
+
+        if level >= 0:
+            ax.set_title(f'level={level}')
+            N = 2**level
+            logger.info(f"  computing level={level} with {N} intervals...")
+            s = cp.empty((N,N), dtype=np.uint8)
+
+            B = 16
+            G = (N+B-1)//B
+            assert B*B < kernel.max_threads_per_block
+            kernel((B,B), (G,G), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
+            s = s.get()
+
+            ax.imshow(s + 10*(s==0), zorder=0, vmin=0, vmax=10, cmap='Set1',
+                    extent=[xmin, xmax, ymin, ymax], origin='lower')
+        else:
+            ax.set_title(f'f(x,y)')
+            ax.imshow(z, zorder=0, vmin=-4, vmax=+4, cmap='seismic',
+                    extent=[xmin, xmax, ymin, ymax], origin='lower')
+
         fig.show()
 
     logger.info("All done.")
