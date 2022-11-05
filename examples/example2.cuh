@@ -77,11 +77,17 @@ __global__ void kernel(const T xmin, const T xmax,
     bool active;
 
     if (k < current_active_cells) {
-        const bool is_start_level = (current_level == start_level);
+        const size_t oid = ((current_level == start_level) ? k : active_cells[k]);
+        
+        const size_t osplit = 1 << (current_level - 1);
+        const size_t old_i = (oid / osplit);
+        const size_t old_j = (oid % osplit);
+        const size_t i_offset = (threadIdx.x & 0x02) >> 1;
+        const size_t j_offset = (threadIdx.x & 0x01) >> 0;
+
+        const size_t i = 2 * old_i + i_offset;
+        const size_t j = 2 * old_j + j_offset;
         const size_t nsplit = 1 << current_level;
-        cid = (is_start_level ? k : active_cells[k]);
-        const size_t i = 2 * (cid / nsplit) + (threadIdx.x & 0x02) >> 1;
-        const size_t j = 2 * (cid % nsplit) + (threadIdx.x & 0x01) >> 0;
         cid = i*nsplit + j;
 
         const T Lx = xmax - xmin;
@@ -106,7 +112,6 @@ __global__ void kernel(const T xmin, const T xmax,
     }
 
     const I output_index = prefix_sum<warps_per_block, warpsize>(active, active_offsets, active_cells_counter);
-
     if (active) {
         active_cells[output_index] = cid;
     }
