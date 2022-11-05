@@ -18,82 +18,71 @@ constexpr I N = 8;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-__global__ void kernel(const T xmin, const T xmax,
-                       const T ymin, const T ymax,
-                       const I level, unsigned char* sign) {{
-    const size_t i = blockIdx.y * blockDim.y + threadIdx.y;
-    const size_t j = blockIdx.x * blockDim.x + threadIdx.x;
-
-    const size_t nsplit = 1 << level;
-    const size_t k = i*nsplit + j;
-
-    if ((i >= nsplit) || (j >= nsplit)) {{ return; }}
-
-    const T Lx = xmax - xmin;
-    const T Ly = ymax - ymin;
-    const T dx = Lx / nsplit;
-    const T dy = Ly / nsplit;
-
-    const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
-    const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
-
-    G index_generator;
-    const AA x(xi, index_generator);
-    const AA y(yi, index_generator);
-    const AA xy = x*y;
-    const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
-
-    const Interval zi(z);
-    sign[k] = zi.sign();
-}}
+#include "examples/example2.cuh"
 """
 
 if __name__ == "__main__":
-    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('kernel',))
-
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating grids for function {fname}...")
 
-    levels = [-1,2,3,4,5,6]
+    start_level = 2
+    end_level = 6
     xmin, xmax = -2, 2
     ymin, ymax = -2, 2
     def f(x,y):
         return x*x + y*y + x*y - (x*y)**2/2 - 0.25
 
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(14,10))
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(14,10))
     fig.suptitle(fname)
 
     x = cp.linspace(xmin, xmax, 1024)[None,:]
     y = cp.linspace(xmin, xmax, 1024)[:,None]
     z = f(x,y).get()
 
-    for level, ax in zip(levels, axes.ravel()):
+    ax = axes
+    ax.set_title(f'f(x,y)')
+    ax.imshow(z, zorder=0, vmin=-4, vmax=+4, cmap='seismic',
+            extent=[xmin, xmax, ymin, ymax], origin='lower')
+    ax.contour(z, levels=[0], zorder=1, colors=['k'],
+            extent=[xmin, xmax, ymin, ymax], origin='lower')
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
 
-        ax.contour(z, levels=[0], zorder=1, colors=['k'],
-                extent=[xmin, xmax, ymin, ymax], origin='lower')
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
+    logger.info(f"  computing quad_tree with start_level={start_level} and end_level={end_level}...")
 
-        if level >= 0:
-            ax.set_title(f'level={level}')
-            N = 2**level
-            logger.info(f"  computing level={level} with {N} intervals...")
-            s = cp.empty((N,N), dtype=np.uint8)
+    N = 2**start_level
+    active_cell_indices = cp.empty((N,N), dtype=I)
+    active_cell_counter = cp.empty((), dtype=I)
 
-            B = 16
-            G = (N+B-1)//B
-            assert B*B < kernel.max_threads_per_block
-            kernel((B,B), (G,G), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
-            s = s.get()
+    threads_per_block = 128
+    warpsize = cp.cuda.Device(0).attributes['WarpSize']
+    warps_per_block = threads_per_block // warpsize;
+    kname = f'kernel<{warps_per_block},{warpsize}>'
+    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
+    assert threads_per_block <= kernel.max_threads_per_block, (B, kernel.max_threads_per_block)
 
-            ax.imshow(s + 10*(s==0), zorder=0, vmin=0, vmax=10, cmap='Set1',
-                    extent=[xmin, xmax, ymin, ymax], origin='lower')
-        else:
-            ax.set_title(f'f(x,y)')
-            ax.imshow(z, zorder=0, vmin=-4, vmax=+4, cmap='seismic',
-                    extent=[xmin, xmax, ymin, ymax], origin='lower')
+    nactive = (N/2)*(N/2)  # correponds to active cells of previous level = start_level - 1.
+    for current_level in range(start_level, end_level):
+        B = threads_per_block
+        G = (nactive+B-1)//B
 
-        fig.show()
+        active_cell_counter[...] = 0   # reset cell counter for next level
+
+        kernel((G,), (B,),
+                (T(xmin), T(xmax), T(ymin), T(ymax),
+                   I(start_level), I(end_level),
+                   I(current_level), I(nactive),
+                   active_cell_indices, active_cell_counter))
+
+        Ntot = 2**current_level
+
+        nactive = int(active_cell_counter.get())
+        logger.info(f"  active cells at level {current_level} is {nactive}/{Ntot*Ntot}.")
+        if nactive == 0:
+            break
+
+    #ax.imshow(s + 10*(s==0), zorder=0, vmin=0, vmax=10, cmap='Set1',
+            #extent=[xmin, xmax, ymin, ymax], origin='lower')
 
     logger.info("All done.")
-    plt.show()
+    #plt.show()
