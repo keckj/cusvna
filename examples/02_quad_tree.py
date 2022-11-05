@@ -14,7 +14,7 @@ kernel_src = f"""
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
 using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 8;
+constexpr I N = 6;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 

@@ -83,7 +83,7 @@ if __name__ == "__main__":
             B = 16
             G = (N+B-1)//B
             assert B*B < kernel.max_threads_per_block
-            kernel((B,B), (G,G), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
+            kernel((G,G), (B,B), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
             s = s.get()
 
             ax.imshow(s + 10*(s==0), zorder=0, vmin=0, vmax=10, cmap='Set1',
