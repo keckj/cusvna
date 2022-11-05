@@ -50,10 +50,19 @@ int main() {
     z *= 3.0; z_=z_*3.0; assert_equal(z, z_, "z*=3");
     w /= 4.0; w_=w_/4.0; assert_equal(w, w_, "w/=4"); /* libaffa returns libaffa: AA(b=0, x=[4: 0.25, 5: -0, 6: 0]) */
     
+    assert_equal(x*x, x_*x_, "x*y");
+    assert_equal(y*y, y_*y_, "y*y");
+    assert_equal(x*y, x_*y_, "x*y");
+    assert_equal(w*w, w_*w_, "w*w");
+    
     assert_equal(w.reciprocal(), inv(w_), "1/w");
     assert_equal(2.0/w, 2.0*inv(w_), "2/w");
     assert_equal(w/w, w_*inv(w_), "w/w");
     assert_equal(z/w, z_/w_, "z/w");
+    
+    assert_equal(x*y/y, x_*y_/y_, "x*y/y");
+    assert_equal(y*y/y, y_*y_/y_, "y*y/y");
+    assert_equal(w*w/w, w_*w_/w_, "w*w/w");
     
     assert_equal(sqrt(w), sqrt(w_), "sqrt(w)");
     assert_equal(exp(w), exp(w_), "exp(w)");
@@ -61,6 +70,6 @@ int main() {
 
     assert_equal(sinh(w), sinh(w_), "sinh(w)");
     assert_equal(cosh(w), cosh(w_), "cosh(w)");
-    // assert_equal(tanh(w), tanh(w_), "tanh(w)");
-    // assert_equal(cotanh(w), inv(tanh(w_)), "cotanh(w)");
+    /*assert_equal(tanh(w), tanh(w_), "tanh(w)");*/
+    /*assert_equal(cotanh(w), inv(tanh(w_)), "cotanh(w)");*/
 }

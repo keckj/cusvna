@@ -9,7 +9,7 @@
 
 namespace cusvna {
 
-    enum struct Sign: unsigned char {
+    enum Sign: unsigned char {
         UNKNOWN  = 0,
         POSITIVE = 1,
         NEGATIVE = 2,
@@ -21,12 +21,12 @@ namespace cusvna {
         Interval() = default;
         Interval(const Interval& other) = default;
         Interval& operator=(const Interval& other) = default;
-        __host__ __device__ Interval(const T& _a, const T& _b): a(_a), b(_b) { assert(b>=a); }
+        __host__ __device__ Interval(const T& _a, const T& _b): a(_a), b(_b) { assert(b>=a || a!=a || b!=b); }
         __host__ __device__ T length() const { return (b-a); };
         __host__ __device__ T radius() const { return (b-a)/T(2); };
         __host__ __device__ T midpoint() const { return (a+b)/T(2); };
         __host__ __device__ Sign sign() const {
-            return (b<=T(0) ? IntervalSign::NEGATIVE : (a>=T(0) ? IntervalSign::POSITIVE : IntervalSign::UNKNOWN));
+            return (b<=T(0) ? Sign::NEGATIVE : (a>=T(0) ? Sign::POSITIVE : Sign::UNKNOWN));
         }
     };
 
@@ -34,6 +34,21 @@ namespace cusvna {
     template <typename T>
     __host__ std::ostream& operator<<(std::ostream& os, const Interval<T>& interval) {
         os << '[' << interval.a << ", " << interval.b << ']';
+        return os;
+    }
+    
+    __host__ std::ostream& operator<<(std::ostream& os, const Sign& sign) {
+        switch (sign) {
+            case Sign::UNKNOWN:
+                os << "UNKNOWN";
+                break;
+            case Sign::NEGATIVE:
+                os << "NEGATIVE";
+                break;
+            case Sign::POSITIVE:
+                os << "POSITIVE";
+                break;
+        }
         return os;
     }
 #endif

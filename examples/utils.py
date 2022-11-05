@@ -76,7 +76,8 @@ def determine_cuda_include_dir(logger):
 
 
 cuda_include_dir = determine_cuda_include_dir(logger);
-default_build_options = (f'-I{cuda_include_dir}', f'-I{cusvna_include_dir}', '-std=c++17')
+default_build_options = (f'-I{cuda_include_dir}', f'-I{cusvna_include_dir}', '-std=c++17',
+        '--use_fast_math', '--modify-stack-limit=true', '--restrict', '--ptxas-options=-O3')
 
 
 def build_module_and_extract_kernels_from_source(

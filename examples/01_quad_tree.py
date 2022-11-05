@@ -14,7 +14,7 @@ kernel_src = f"""
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
 using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 16;
+constexpr I N = 8;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
@@ -44,7 +44,7 @@ __global__ void kernel(const T xmin, const T xmax,
     const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
 
     const Interval zi(z);
-    sign[k] = static_cast<unsigned char>(zi.sign());
+    sign[k] = zi.sign();
 }}
 """
 
@@ -55,13 +55,13 @@ if __name__ == "__main__":
     fname = f'Bruteforce {fname}'
     logger.info(f"Generating grids for function {fname}...")
 
-    levels = [3,4,5,6]
+    levels = [2,3,4,5,6,7]
     xmin, xmax = -2, 2
     ymin, ymax = -2, 2
     def f(x,y):
         return x*x + y*y + x*y - (x*y)**2/2 - 0.25
 
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10,10))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(10,10))
     fig.suptitle(fname)
 
     x = cp.linspace(xmin, xmax, 1024)[None,:]
@@ -69,12 +69,13 @@ if __name__ == "__main__":
     z = f(x,y).get()
 
     for level, ax in zip(levels, axes.ravel()):
-        logger.info(f"  computing level={level}...")
         N = 2**level
+        logger.info(f"  computing level={level} with {N} intervals...")
         s = cp.empty((N,N), dtype=np.uint8)
 
-        B = 32
+        B = 16
         G = (N+B-1)//B
+        assert B*B < kernel.max_threads_per_block
         kernel((B,B), (G,G), (T(xmin), T(xmax), T(ymin), T(ymax), I(level), s))
         s = s.get()
 

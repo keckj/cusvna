@@ -67,6 +67,7 @@ if __name__ == "__main__":
 
             block_size = 128
             grid_size  = (N+block_size-1)//block_size
+            assert block_size < kernel.max_threads_per_block
             kernel((block_size,), (grid_size,), (T(xmin), T(xmax), I(N), I(k), a, b))
             a, b = a.get(), b.get()
 

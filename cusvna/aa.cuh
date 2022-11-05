@@ -53,6 +53,8 @@ namespace cusvna {
 
             __host__ __device__ T radius() const; /* sum of absolute symbol magnitudes */
             __host__ __device__ Interval<T> interval() const; /* cast to an interval */
+            __host__ __device__ Sign sign() const; /* shortcut for Interval<T>(*this).sign() */
+            __host__ __device__ void print() const;
             
             __host__ __device__ AA<T,I,G,N>& operator=(const AA<T,I,G,N>& other);
             
@@ -76,8 +78,10 @@ namespace cusvna {
             __host__ __device__ AA<T,I,G,N>& operator*=(const AA<T,I,G,N>& other);
             __host__ __device__ AA<T,I,G,N>& operator/=(const AA<T,I,G,N>& other);
         private:
-            T m_coeffs[N+1]; 
-            I m_indices[N+1];
+            T m_x0;
+            T m_coeffs[N]; 
+            I m_n;
+            I m_indices[N];
             G* m_index_generator; /* ptr to symbol index generator, no static members in device code */
     };
         
@@ -126,41 +130,39 @@ namespace cusvna {
     /* implementation */   
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA() : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(nullptr)  {
+        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(nullptr)  {
         static_assert(N>=0, "N<0");
     }
 
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(G& index_generator) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator)  {
+        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator)  {
         static_assert(N>=0, "N<0");
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(G& index_generator, const T& base_coefficient) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator)  {
+        m_x0(base_coefficient), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator)  {
         static_assert(N>=0, "N<0");
-        this->x0() = base_coefficient;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const Interval<T>& interval, G& index_generator):
-        m_coeffs{0}, m_indices{0}, m_index_generator(&index_generator) {
+        m_x0(interval.midpoint()), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator) {
         static_assert(N>=0, "N<0");
-        this->x0() = interval.midpoint();
         this->append_new_symbol(interval.radius());
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& other) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(&other.index_generator()) {
+        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&other.index_generator()) {
         static_assert(N>=0, "N<0");
         *this = other;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& base, const T& alpha, const T& zeta, const T& delta) : 
-        m_coeffs{0}, m_indices{0}, m_index_generator(&base.index_generator()) {
+        m_coeffs{}, m_indices{}, m_index_generator(&base.index_generator()) {
         static_assert(N>=0, "N<0");
         this->x0() = alpha * base.x0() + zeta;
         this->n() = base.n();
@@ -201,34 +203,34 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ T& AA<T,I,G,N>::x0() {
-        return m_coeffs[0];
+        return m_x0;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ I& AA<T,I,G,N>::n() {
-        return m_indices[0];
+        return m_n;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ T* AA<T,I,G,N>::x() {
-        return &m_coeffs[1];
+        return &m_coeffs;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ I* AA<T,I,G,N>::idx() {
-        return &m_indices[1];
+        return &m_indices;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ T& AA<T,I,G,N>::x(const I& i) {
         assert(i<this->n());
-        return m_coeffs[i+1];
+        return m_coeffs[i];
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ I& AA<T,I,G,N>::idx(const I& i) {
         assert(i<this->n());
-        return m_indices[i+1];
+        return m_indices[i];
     }
     
     template <typename T, typename I, typename G, I N>
@@ -243,34 +245,34 @@ namespace cusvna {
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const T& AA<T,I,G,N>::x0() const {
-        return m_coeffs[0];
+        return m_x0;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const I& AA<T,I,G,N>::n() const {
-        return m_indices[0];
+        return m_n;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const T* AA<T,I,G,N>::x() const {
-        return &m_coeffs[1];
+        return &m_coeffs;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const I* AA<T,I,G,N>::idx() const {
-        return &m_indices[1];
+        return &m_indices;
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const T& AA<T,I,G,N>::x(const I& i) const {
         assert(i<this->n());
-        return m_coeffs[i+1];
+        return m_coeffs[i];
     }
     
     template <typename T, typename I, typename G, I N>
     __host__ __device__ const I& AA<T,I,G,N>::idx(const I& i) const {
         assert(i<this->n());
-        return m_indices[i+1];
+        return m_indices[i];
     }
     
     template <typename T, typename I, typename G, I N>
@@ -334,6 +336,11 @@ namespace cusvna {
     template <typename T, typename I, typename G, I N>
     __host__ __device__ Interval<T> AA<T,I,G,N>::interval() const {
         return Interval<T>(*this);
+    };
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ Sign AA<T,I,G,N>::sign() const {
+        return this->interval().sign();
     };
     
     /* operators */
@@ -425,11 +432,9 @@ namespace cusvna {
     /*  OPERATOR *  */
     template <typename T, typename I, typename G, I N>
     __host__ __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        AA<T,I,G,N> out(lhs.index_generator());
-
         const T lhs_x0(lhs.x0()), rhs_x0(rhs.x0());
         const I lhs_n(lhs.n()), rhs_n(rhs.n());
-        out.x0() = lhs_x0 * rhs_x0;
+        AA<T,I,G,N> out(lhs.index_generator(), lhs_x0 * rhs_x0);
         I lhs_i(0), rhs_i(0);
         while(lhs_i < lhs_n || rhs_i < rhs_n) {
             const I lhs_idx(lhs_i >= lhs_n ? G::last_symbol_index : lhs(lhs_i));
@@ -510,11 +515,10 @@ namespace cusvna {
         
         const T alpha = -T(1)/(b*b);
         const T dmin = T(1)/a - alpha*a;
-        const T dmax = T(1)/b - alpha*b;
-
-        const Interval<T> ii(dmin, dmax);
-        const T zeta = (interval.a < T(0) ? T(-1) : T(1)) * ii.midpoint();
-        const T delta = ii.radius();
+        const T dmax = T(2)/b; // - alpha*b;
+        
+        const T zeta = (interval.a < T(0) ? T(-1) : T(1)) * (dmin + dmax)/T(2);
+        const T delta = (dmax - dmin)/T(2);
         
         return AA<T,I,G,N>(*this, alpha, zeta, delta);
     }
@@ -619,11 +623,20 @@ namespace cusvna {
     __host__ __device__ cotan(const AA<T,I,G,N>& val) {
         return cos(val) / sin(val);
     }
+    
+    template <typename T, typename I, typename G, I N>
+    __host__ __device__ void AA<T,I,G,N>::print() const {
+        printf("AA(b=%f, x=[", float(this->x0()));
+        for (I i = 0; i < this->n(); ++i) {
+            printf("%i: %f", int(this->idx(i)), float(this->x(i)));
+            if (i != this->n()-1) { printf(", "); }
+        }
+        printf("])\n");
+    }
 
 #ifndef __CUDACC_RTC__
     template <typename T, typename I, typename G, I N>
-    __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a)
-    {
+    __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a) {
         os << "AA(b=" << a.x0() << ", x=[";
         for (I i = 0; i < a.n(); ++i) {
             os << a.idx(i) << ": " << a.x(i);
