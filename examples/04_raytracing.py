@@ -57,7 +57,7 @@ def create_sbt(program_grps, centers, radii):
 
     raygen_sbt = ox.SbtRecord(raygen_grp)
     miss_sbt = ox.SbtRecord(miss_grp, names=('rgb',), formats=('3f4',))
-    miss_sbt['rgb'] = [0.3, 0.1, 0.2]
+    miss_sbt['rgb'] = [0.0, 0.0, 0.0]
     hit_sbt = ox.SbtRecord(hit_grp, names=('centers', 'radii'), formats=('u8', 'u8'))
     hit_sbt['centers'] = centers.data.ptr
     hit_sbt['radii'] = radii.data.ptr
@@ -76,11 +76,14 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
         ( 'u8', 'image'),
         ( 'u4', 'image_width'),
         ( 'u4', 'image_height'),
+        ( 'u4', 'ray_marching_steps'),
+        ( 'f4', 'ray_marching_threshold'),
         ( '3f4', 'cam_eye'),
         ( '3f4', 'cam_U'),
         ( '3f4', 'cam_V'),
         ( '3f4', 'cam_W'),
-        ( 'u8', 'trav_handle')
+        ( 'u8', 'trav_handle'),
+        ( 'u4', 'rendering_mode'),
     ]
 
     params = ox.LaunchParamsRecord(names=[p[1] for p in params_tmp],
@@ -88,11 +91,14 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
     params['image'] = output_image.data.ptr
     params['image_width'] = img_size[0]
     params['image_height'] = img_size[1]
+    params['ray_marching_steps'] = 50
+    params['ray_marching_threshold'] = 1e-4
     params['cam_eye'] = [0, 0, 2.0]
     params['cam_U'] = [1.10457, 0, 0]
     params['cam_V'] = [0, 0.828427, 0]
     params['cam_W'] = [0, 0, -2.0]
     params['trav_handle'] = gas.handle
+    params['rendering_mode'] = 1
 
     stream = cp.cuda.Stream()
 

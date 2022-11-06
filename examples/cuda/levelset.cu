@@ -19,9 +19,12 @@ struct Params {
     uchar4*                image;
     unsigned int           image_width;
     unsigned int           image_height;
+    unsigned int           ray_marching_steps;
+    float                  ray_marching_threshold;
     float3                 cam_eye;
     float3                 cam_u, cam_v, cam_w;
     OptixTraversableHandle handle;
+    unsigned int           rendering_mode;
 };
 
 
@@ -29,8 +32,23 @@ struct MissData {
     float3 bg_color;
 };
 
+extern "C" {
+__constant__ Params params;
+}
+
+__device__ float f(const float3& x, const float3& origin, const float radius) {
+    const float3 dx = x - origin;
+    return norm3df(dx.x, dx.y, dx.z) - radius;
+}
+
+__device__ float3 df(const float3& x, const float3& origin, const float radius) {
+    const float3 dx = x - origin;
+    return dx / norm3df(dx.x, dx.y, dx.z);
+}
+
 extern "C" __global__ void __intersection__levelset() {
-    const levelset::LevelsetHitGroupData* hit_group_data = reinterpret_cast<levelset::LevelsetHitGroupData*>( optixGetSbtDataPointer() );
+    const levelset::LevelsetHitGroupData* hit_group_data = \
+            reinterpret_cast<levelset::LevelsetHitGroupData*>( optixGetSbtDataPointer() );
 
     const unsigned int primitive_index = optixGetPrimitiveIndex();
 
@@ -39,63 +57,21 @@ extern "C" __global__ void __intersection__levelset() {
     const float  ray_tmin = optixGetRayTmin();
     const float  ray_tmax = optixGetRayTmax();
 
-    const float3 O      = ray_orig - hit_group_data->centers[primitive_index];
-
-    const float  l      = 1.0f / length( ray_dir );
-    const float3 D      = ray_dir * l;
+    const float3 origin = hit_group_data->centers[primitive_index];
     const float  radius = hit_group_data->radii[primitive_index];
-    float b    = dot( O, D );
-    float c    = dot( O, O ) - radius * radius;
-    float disc = b * b - c;
-    if( disc > 0.0f )
-    {
-        float sdisc        = sqrtf( disc );
-        float root1        = ( -b - sdisc );
-        float root11       = 0.0f;
-        bool  check_second = true;
 
-        const bool do_refine = fabsf( root1 ) > ( 10.0f * radius );
-
-        if( do_refine )
-        {
-            // refine root1
-            float3 O1 = O + root1 * D;
-            b         = dot( O1, D );
-            c         = dot( O1, O1 ) - radius * radius;
-            disc      = b * b - c;
-
-            if( disc > 0.0f )
-            {
-                sdisc  = sqrtf( disc );
-                root11 = ( -b - sdisc );
-            }
+    float t = ray_tmin;
+    for(int i = 0; i < params.ray_marching_steps && t <= ray_tmax; ++i) {
+        const float3 x = ray_orig + t*ray_dir;
+        const float d = f(x, origin, radius);
+        if (abs(d) < params.ray_marching_threshold) {
+            const float3 normal = df(x, origin, radius);
+            optixReportIntersection(t, 0, float3_as_ints(normal), i);
+            break;
         }
-
-        float  t;
-        float3 normal;
-        t = ( root1 + root11 ) * l;
-        if( t > ray_tmin && t < ray_tmax )
-        {
-            normal = ( O + ( root1 + root11 ) * D ) / radius;
-            if( optixReportIntersection( t, 0, float3_as_ints( normal ), __float_as_int( radius ) ) )
-                check_second = false;
-        }
-
-        if( check_second )
-        {
-            float root2 = ( -b + sdisc ) + ( do_refine ? root1 : 0 );
-            t           = root2 * l;
-            normal      = ( O + root2 * D ) / radius;
-            if( t > ray_tmin && t < ray_tmax )
-                optixReportIntersection( t, 0, float3_as_ints( normal ), __float_as_int( radius ) );
-        }
+        t += d;
     }
 }
-
-extern "C" {
-__constant__ Params params;
-}
-
 
 static __forceinline__ __device__ void computeRay( uint3 idx, uint3 dim, float3& origin, float3& direction )
 {
@@ -194,11 +170,20 @@ extern "C" __global__ void __miss__ms()
 
 extern "C" __global__ void __closesthit__ch()
 {
-    const float3 shading_normal =
+    const float3 normal =
             make_float3(
                     __int_as_float( optixGetAttribute_0() ),
                     __int_as_float( optixGetAttribute_1() ),
                     __int_as_float( optixGetAttribute_2() )
             );
-    setPayload( normalize( optixTransformNormalFromObjectToWorldSpace( shading_normal ) ) * 0.5f + 0.5f );
+    const int steps = optixGetAttribute_3();
+    
+    float3 color;
+    if (params.rendering_mode == 0) {
+        color = normalize( optixTransformNormalFromObjectToWorldSpace( normal ) ) * 0.5f + 0.5f;
+    }
+    else {
+        color = normalize(make_float3(steps, 0, params.ray_marching_steps-1-steps));
+    }
+    setPayload(color);
 }
