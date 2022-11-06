@@ -1,3 +1,5 @@
 numpy
 cupy
 matplotlib
+Pillow
+git+https://github.com/mortacious/python-optix
