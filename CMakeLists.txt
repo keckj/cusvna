@@ -5,7 +5,7 @@ project(cusvna VERSION 1.0.0 LANGUAGES CXX CUDA)
 set(CUSVNA_EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 set(CUSVNA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
-option(CUSVNA_BUILD_TESTS "Enable the compilation of the example files." ON)
+option(CUSVNA_BUILD_TESTS "Enable the compilation of tests." ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
