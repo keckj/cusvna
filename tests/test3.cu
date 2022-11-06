@@ -29,18 +29,17 @@ int main() {
         interval u_(ymin + i*dy, ymin + (i+1)*dy);
         AA y(u,g);
         AAF y_(u_);
+
         for (I j = 0; j < nintervals; ++j) {
             Interval v(xmin + j*dx, xmin + (j+1)*dx);
             interval v_(xmin + j*dx, xmin + (j+1)*dx);
             AA x(v,g);
             AAF x_(v_);
+
             AA z = f(x,y);
             AAF z_ = f(x_,y_);
+
             assert_equal(z, z_);
-            
-            if (i==0 && j==0) {
-                std::cout << "(" << i << ", " << j << ")   " << u << 'x' << v << "  =>  " << z.sign() << "   " << Interval(z) << "   " << z << std::endl;
-            }
         }
     }
 }
