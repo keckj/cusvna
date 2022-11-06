@@ -18,7 +18,7 @@ constexpr I N = 21;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-#include "examples/octtree.cuh"
+#include "examples/cuda/octtree.cuh"
 """
 
 if __name__ == "__main__":
