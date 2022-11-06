@@ -18,14 +18,14 @@ constexpr I N = 6;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-#include "examples/example2.cuh"
+#include "examples/quadtree.cuh"
 """
 
 if __name__ == "__main__":
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating quadtree for function {fname}...")
 
-    do_plot = False
+    do_plot = True
     nlevels = 6 if do_plot else 15
 
     start_level = 2
@@ -40,7 +40,7 @@ if __name__ == "__main__":
         fig.suptitle(fname)
 
         x = cp.linspace(xmin, xmax, 1024)[None,:]
-        y = cp.linspace(xmin, xmax, 1024)[:,None]
+        y = cp.linspace(ymin, ymax, 1024)[:,None]
         z = f(x,y).get()
     else:
         axes = np.full(nlevels, fill_value=None)
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     logger.info(f"Computing quad_tree with start_level={start_level} and end_level={end_level-1}...")
 
     N = 2**start_level
-    active_cell_indices = cp.empty(1000000, dtype=I)  # index buffer, should be large enough to handle end_level active cell count
+    active_cell_indices = cp.empty(100000, dtype=I)  # index buffer, should be large enough to handle end_level active cell count
     active_cell_counter = cp.empty((), dtype=I)
 
     threads_per_block = 128
@@ -56,12 +56,12 @@ if __name__ == "__main__":
     warps_per_block = threads_per_block // warpsize;
     kname = f'kernel<{warps_per_block},{warpsize}>'
     kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
-    assert threads_per_block <= kernel.max_threads_per_block, (B, kernel.max_threads_per_block)
+    assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 
     start = cp.cuda.Event(disable_timing=False)
     end = cp.cuda.Event(disable_timing=False)
 
-    nactive = (N/2)*(N/2)  # correponds to active cells of previous level = start_level - 1.
+    nactive = (N//2)**2  # correponds to active cells of previous level = start_level - 1.
     for current_level, ax in zip(range(start_level, end_level), axes.ravel()):
         B = threads_per_block
         G = (4*nactive+B-1)//B
@@ -80,7 +80,8 @@ if __name__ == "__main__":
 
         nactive = int(active_cell_counter.get())
         Ntot = 2**current_level
-        logger.info(f"  {time_ms*1000.0:6.1f}us -- grid {Ntot:5d} x {Ntot:5d} -- active cells at level {current_level:2d} is {nactive}/{Ntot*Ntot} ({100.0*nactive/Ntot/Ntot:2.2f}%)")
+        logger.info(f"  {time_ms*1000:6.1f}us -- level {current_level:2d} -- grid {Ntot:5d}^2 = 2^{2*current_level:2d}"
+                    f" -- active cells {nactive}/{Ntot**2} ({100.0*nactive/(Ntot**2):2.2f}%)")
 
         if nactive == 0:
             break

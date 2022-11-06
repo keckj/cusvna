@@ -1,4 +1,4 @@
-/* this is included in 02_quad_tree.py */
+/* this file is part of example 02_quadtree.py */
 
 template <unsigned int warps_per_block, unsigned int warpsize>
 __device__ I prefix_sum(I prefix,
@@ -62,11 +62,12 @@ __device__ I prefix_sum(I prefix,
 
 
 template <unsigned int warps_per_block, unsigned int warpsize>
+__launch_bounds__(warps_per_block * warpsize)
 __global__ void kernel(const T xmin, const T xmax,
                        const T ymin, const T ymax,
                        const I start_level, const I end_level,
                        const I current_level, const I current_active_cells,
-                       unsigned int* active_cells, unsigned int* active_cells_counter) {
+                       I* active_cells, I* active_cells_counter) {
     
     __shared__ I active_offsets[warps_per_block];
     
