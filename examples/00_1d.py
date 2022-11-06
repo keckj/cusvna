@@ -79,9 +79,9 @@ if __name__ == "__main__":
                 xend = xstart + dx
 
                 # check corectness of returned results
-                #mask = np.where(np.logical_and(x >= xstart, x <= xend))
-                #assert (y[mask] >= a[i]).all()
-                #assert (y[mask] <= b[i]).all()
+                mask = np.where(np.logical_and(x >= xstart, x <= xend))
+                assert (y[mask] >= a[i]).all()
+                assert (y[mask] <= b[i]).all()
 
                 rectangle = matplotlib.patches.Rectangle((xstart,a[i]), dx, b[i]-a[i],
                         zorder=0, alpha=0.5, facecolor='b', edgecolor='k')
