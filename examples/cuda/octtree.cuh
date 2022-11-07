@@ -1,4 +1,4 @@
-/* this file is part of example 03_octtree.py */
+/* this file is part of example 02_quadtree.py */
 
 template <unsigned int warps_per_block, unsigned int warpsize>
 __device__ I prefix_sum(I prefix,
@@ -73,66 +73,62 @@ __global__ void kernel(const T xmin, const T xmax,
     __shared__ I active_offsets[warps_per_block];
     
     const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const size_t k = tid >> 3;
 
-    size_t cid;
-    bool active;
+    I nactive = 0;
+    size_t cid[8];
 
-    if (k < current_active_cells) {
-        const size_t oid = ((current_level == start_level) ? k : active_cells[k]);
+    if (tid < current_active_cells) {
+        const size_t oid = ((current_level == start_level) ? tid : active_cells[tid]);
         
         const size_t osplit = 1 << (current_level - 1);
-        const size_t old_i = oid / (osplit*osplit);
-        const size_t old_j = (oid - old_i*osplit*osplit) / osplit;
-        const size_t old_k = oid % osplit;
+        const size_t old_i = (oid / osplit / osplit);
+        const size_t old_j = ((oid / osplit) % osplit);
+        const size_t old_k = (oid % osplit);
 
-        const size_t i_offset = (threadIdx.x & 0x04) >> 2;
-        const size_t j_offset = (threadIdx.x & 0x02) >> 1;
-        const size_t k_offset = (threadIdx.x & 0x00) >> 0;
-
-        const size_t i = 2 * old_i + i_offset;
-        const size_t j = 2 * old_j + j_offset;
-        const size_t k = 2 * old_k + k_offset;
         const size_t nsplit = 1 << current_level;
-        cid = (i*nsplit + j)*nsplit + k;
+        const T dz = (zmax - zmin) / nsplit;
+        const T dy = (ymax - ymin) / nsplit;
+        const T dx = (xmax - xmin) / nsplit;
+        
+        for(size_t offset=0; offset<8; offset++) {
+            const size_t i = 2 * old_i + ((offset & 0x4) >> 2);
+            const size_t j = 2 * old_j + ((offset & 0x2) >> 1);
+            const size_t k = 2 * old_k + ((offset & 0x1) >> 0);
 
-        const T Lz = zmax - zmin;
-        const T Ly = ymax - ymin;
-        const T Lx = xmax - xmin;
+            const Interval zi(zmin + i*dz, zmin + (i+1)*dz);
+            const Interval yi(ymin + j*dy, ymin + (j+1)*dy);
+            const Interval xi(xmin + k*dx, xmin + (k+1)*dx);
+        
+            G index_generator;
+            const AA z(zi, index_generator);
+            const AA y(yi, index_generator);
+            const AA x(xi, index_generator);
 
-        const T dz = Lz / nsplit;
-        const T dy = Ly / nsplit;
-        const T dx = Lx / nsplit;
+            const AA zz = z*z;
+            const AA yy = y*y;
+            const AA xx = x*x;
 
-        const Interval zi(zmin + i*dy, zmin + (i+1)*dz);
-        const Interval yi(ymin + j*dy, ymin + (j+1)*dy);
-        const Interval xi(xmin + k*dx, xmin + (k+1)*dx);
-
-        G index_generator;
-        const AA x(xi, index_generator);
-        const AA y(yi, index_generator);
-        const AA z(zi, index_generator);
-        const AA xx(x*x), yy(y*y), zz(z*z);
-
-        const AA w = (
-               (x-T(2))*(x-T(2)) * (x+T(2))*(x+T(2))
-             + (y-T(2))*(y-T(2)) * (y+T(2))*(y+T(2))
-             + (z-T(2))*(z-T(2)) * (z+T(2))*(z+T(2))
-             + (xx * yy + xx * zz + yy * zz)
-             + T(6)*x*y*z
-             - T(10)*(xx+yy+zz)
-             + T(22));
-
-        active = (w.sign() == cusvna::Sign::UNKNOWN);
+            const AA w = (
+                   (x-T(2))*(x-T(2)) * (x+T(2))*(x+T(2))
+                 + (y-T(2))*(y-T(2)) * (y+T(2))*(y+T(2))
+                 + (z-T(2))*(z-T(2)) * (z+T(2))*(z+T(2))
+                 + (xx * yy + xx * zz + yy * zz)
+                 + T(6)*x*y*z
+                 - T(10)*(xx+yy+zz)
+                 + T(22));
+        
+            bool active = (w.sign() == cusvna::Sign::UNKNOWN);
+            
+            if (active) {
+                cid[nactive] = (i*nsplit + j)*nsplit + k;
+                nactive++;
+            }
+        }
     }
-    else {
-        cid = I(-1);
-        active = false;
-    }
 
-    const I output_index = prefix_sum<warps_per_block, warpsize>(active, active_offsets, active_cells_counter);
+    const I output_index = prefix_sum<warps_per_block, warpsize>(nactive, active_offsets, active_cells_counter);
 
-    if (active) {
-        active_cells[output_index] = cid;
+    for(I offset=0; offset<nactive; offset++) {
+        active_cells[output_index + offset] = cid[offset];
     }
 }

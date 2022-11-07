@@ -64,7 +64,7 @@ if __name__ == "__main__":
     nactive = (N//2)**2  # correponds to active cells of previous level = start_level - 1.
     for current_level, ax in zip(range(start_level, end_level), axes.ravel()):
         B = threads_per_block
-        G = (4*nactive+B-1)//B
+        G = (nactive+B-1)//B
 
         active_cell_counter[...] = 0   # reset cell counter for next level
 

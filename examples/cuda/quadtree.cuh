@@ -72,48 +72,47 @@ __global__ void kernel(const T xmin, const T xmax,
     __shared__ I active_offsets[warps_per_block];
     
     const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const size_t k = tid >> 2;
 
-    size_t cid;
-    bool active;
+    I nactive = 0;
+    size_t cid[4];
 
-    if (k < current_active_cells) {
-        const size_t oid = ((current_level == start_level) ? k : active_cells[k]);
+    if (tid < current_active_cells) {
+        const size_t oid = ((current_level == start_level) ? tid : active_cells[tid]);
         
         const size_t osplit = 1 << (current_level - 1);
         const size_t old_i = (oid / osplit);
         const size_t old_j = (oid % osplit);
-        const size_t i_offset = (threadIdx.x & 0x02) >> 1;
-        const size_t j_offset = (threadIdx.x & 0x01) >> 0;
 
-        const size_t i = 2 * old_i + i_offset;
-        const size_t j = 2 * old_j + j_offset;
         const size_t nsplit = 1 << current_level;
-        cid = i*nsplit + j;
+        const T dx = (xmax - xmin) / nsplit;
+        const T dy = (ymax - ymin) / nsplit;
+        
+        #pragma unroll 4
+        for(size_t offset=0; offset<4; offset++) {
+            const size_t i = 2 * old_i + ((offset & 0x2) >> 1);
+            const size_t j = 2 * old_j + ((offset & 0x1) >> 0);
 
-        const T Lx = xmax - xmin;
-        const T Ly = ymax - ymin;
-        const T dx = Lx / nsplit;
-        const T dy = Ly / nsplit;
-
-        const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
-        const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
-
-        G index_generator;
-        const AA x(xi, index_generator);
-        const AA y(yi, index_generator);
-        const AA xy = x*y;
-        const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
-
-        active = (z.sign() == cusvna::Sign::UNKNOWN);
+            const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
+            const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
+        
+            G index_generator;
+            const AA x(xi, index_generator);
+            const AA y(yi, index_generator);
+            const AA xy = x*y;
+            const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
+        
+            bool active = (z.sign() == cusvna::Sign::UNKNOWN);
+            
+            if (active) {
+                cid[nactive] = i*nsplit + j;
+                nactive++;
+            }
+        }
     }
-    else {
-        cid = I(-1);
-        active = false;
-    }
 
-    const I output_index = prefix_sum<warps_per_block, warpsize>(active, active_offsets, active_cells_counter);
-    if (active) {
-        active_cells[output_index] = cid;
+    const I output_index = prefix_sum<warps_per_block, warpsize>(nactive, active_offsets, active_cells_counter);
+
+    for(I offset=0; offset<nactive; offset++) {
+        active_cells[output_index + offset] = cid[offset];
     }
 }

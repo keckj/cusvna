@@ -63,7 +63,7 @@ if __name__ == "__main__":
     nactive = (N//2)**3  # correponds to active cells of previous level = start_level - 1.
     for current_level in range(start_level, end_level+1):
         B = threads_per_block
-        G = (8*nactive+B-1)//B
+        G = (nactive+B-1)//B
 
         active_cell_counter[...] = 0   # reset cell counter for next level
 
