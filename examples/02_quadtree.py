@@ -51,11 +51,11 @@ if __name__ == "__main__":
     active_cell_indices = cp.empty(100000, dtype=I)  # index buffer, should be large enough to handle end_level active cell count
     active_cell_counter = cp.empty((), dtype=I)
 
-    threads_per_block = 128
     warpsize = cp.cuda.Device(0).attributes['WarpSize']
-    warps_per_block = threads_per_block // warpsize;
+    warps_per_block = 8
     kname = f'kernel<{warps_per_block},{warpsize}>'
     kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
+    threads_per_block = warps_per_block * warpsize
     assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 
     start = cp.cuda.Event(disable_timing=False)
