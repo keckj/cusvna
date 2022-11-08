@@ -4,6 +4,8 @@
 #include "examples/cuda/vec_math.cuh"
 #include "examples/cuda/helpers.cuh"
 
+#include <cusvna/aa.cuh>
+
 #define float3_as_ints( u ) __float_as_int( u.x ), __float_as_int( u.y ), __float_as_int( u.z )
 
 namespace levelset {
@@ -36,9 +38,17 @@ extern "C" {
 __constant__ Params params;
 }
 
-__device__ float f(const float3& x, const float3& origin, const float radius) {
-    const float3 dx = x - origin;
-    return norm3df(dx.x, dx.y, dx.z) - radius;
+template <typename T>
+__device__ T f(const T& x, const T& y, const T& z,
+                   const float3& origin, const float radius) {
+    const T dx(x-origin.x);
+    const T dy(y-origin.y);
+    const T dz(z-origin.z);
+    return sqrt(dx*dx + dy*dy + dz*dz) - radius;
+}
+
+__device__ float f(const float3& p, const float3& origin, const float radius) {
+    return f<float>(p.x, p.y, p.z, origin, radius);
 }
 
 __device__ float3 df(const float3& x, const float3& origin, const float radius) {
@@ -59,18 +69,64 @@ extern "C" __global__ void __intersection__levelset() {
 
     const float3 origin = hit_group_data->centers[primitive_index];
     const float  radius = hit_group_data->radii[primitive_index];
-
+   
+#ifdef SDF
+    /* Ray marching using signed distance field with SDF sphere tracing */
     float t = ray_tmin;
     for(int i = 0; i < params.ray_marching_steps && t <= ray_tmax; ++i) {
-        const float3 x = ray_orig + t*ray_dir;
-        const float d = f(x, origin, radius);
+        const float3 p = ray_orig + t*ray_dir;
+        const float d = f(p, origin, radius);
         if (abs(d) < params.ray_marching_threshold) {
-            const float3 normal = df(x, origin, radius);
+            const float3 normal = df(p, origin, radius);
             optixReportIntersection(t, 0, float3_as_ints(normal), i);
             break;
         }
         t += d;
     }
+#else
+    /* Ray marching using general interval tracing */
+    using T = float;
+    using I = unsigned int;
+    using G = cusvna::LocalThreadIndex<I>;
+    constexpr I N = 8;
+    using AA = cusvna::AA<T,I,G,N>;
+
+    /* See Spelunking the Deep: Guaranteed Queries on General Neural Implicit Surfaces via Range Analysis, procedure 2 */
+    const float np = 1.5f;
+    const float nm = 0.5f;
+
+    const float f0 = f(ray_orig, origin, radius);
+    const float delta = params.ray_marching_threshold;
+
+    float t = 0;
+    float sigma = ray_tmax / 10.0;
+    for(int i = 0; i < params.ray_marching_steps && t <= ray_tmax; ++i) {
+        const float3 pc = ray_orig + (t+delta)*ray_dir;
+        const float  fc = f(pc, origin, radius);
+        if (((f0 < 0) ^ (fc < 0)) && t >= ray_tmin) {
+            const float3 normal = df(pc, origin, radius);
+            optixReportIntersection(t, 0, float3_as_ints(normal), i);
+            break;
+        }
+        const float3 c = ray_orig + (t+sigma/2)*ray_dir;
+        const float3 v = (sigma/2)*ray_dir;
+        
+        G g;
+        const AA xv = AA(g, c.x).append_new_symbol(v.x);
+        const AA yv = AA(g, c.y).append_new_symbol(v.y);
+        const AA zv = AA(g, c.z).append_new_symbol(v.z);
+
+        const AA w = f(xv, yv, zv, origin, radius);
+        if (w.sign() == cusvna::Sign::UNKNOWN) {
+            t += delta;
+            sigma *= nm;
+        }
+        else {
+            t += max(sigma, delta);
+            sigma *= np;
+        }
+    }
+#endif
 }
 
 static __forceinline__ __device__ void computeRay( uint3 idx, uint3 dim, float3& origin, float3& direction )
@@ -154,7 +210,7 @@ extern "C" __global__ void __raygen__rg()
            ray_origin,
            ray_direction,
            0.00f,  // tmin
-           1e16f,  // tmax
+           10.0f,  // tmax
            &payload_rgb );
 
     params.image[idx.y * params.image_width + idx.x] = make_color( payload_rgb );

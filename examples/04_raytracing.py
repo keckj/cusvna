@@ -91,8 +91,8 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
     params['image'] = output_image.data.ptr
     params['image_width'] = img_size[0]
     params['image_height'] = img_size[1]
-    params['ray_marching_steps'] = 50
-    params['ray_marching_threshold'] = 1e-4
+    params['ray_marching_steps'] = 100
+    params['ray_marching_threshold'] = 1e-3
     params['cam_eye'] = [0, 0, 2.0]
     params['cam_U'] = [1.10457, 0, 0]
     params['cam_V'] = [0, 0.828427, 0]
