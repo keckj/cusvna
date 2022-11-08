@@ -38,23 +38,30 @@ extern "C" {
 __constant__ Params params;
 }
 
+__device__ float3 df(const float3& p, const float3& origin, const float radius) {
+    const float3 dx = p - origin;
+    return dx / norm3df(dx.x, dx.y, dx.z);
+}
+
+#ifdef SDF
+__device__ float f(const float3& p, const float3& origin, const float radius) {
+    const float3 dx = p - origin;
+    return norm3df(dx.x, dx.y, dx.z) - radius;
+}
+#else
 template <typename T>
 __device__ T f(const T& x, const T& y, const T& z,
                    const float3& origin, const float radius) {
     const T dx(x-origin.x);
     const T dy(y-origin.y);
     const T dz(z-origin.z);
-    return sqrt(dx*dx + dy*dy + dz*dz) - radius;
+    return dx*dx + dy*dy + dz*dz - radius*radius;
 }
 
 __device__ float f(const float3& p, const float3& origin, const float radius) {
     return f<float>(p.x, p.y, p.z, origin, radius);
 }
-
-__device__ float3 df(const float3& x, const float3& origin, const float radius) {
-    const float3 dx = x - origin;
-    return dx / norm3df(dx.x, dx.y, dx.z);
-}
+#endif
 
 extern "C" __global__ void __intersection__levelset() {
     const levelset::LevelsetHitGroupData* hit_group_data = \

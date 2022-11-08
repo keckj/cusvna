@@ -14,6 +14,7 @@ cuda_src = os.path.join(script_dir, "cuda", "levelset.cu")
 
 img_size = (1024, 768)
 display_iterations = False
+use_sphere_tracing = False
 
 def compute_levelsets_bbox(centers, radii):
     out = cp.empty((centers.shape[0], 6), dtype='f4')
@@ -31,6 +32,8 @@ def create_acceleration_structure(ctx, bboxes):
 def create_module(ctx, pipeline_opts):
     compile_opts = ox.ModuleCompileOptions(debug_level=ox.CompileDebugLevel.FULL, opt_level=ox.CompileOptimizationLevel.LEVEL_0)
     build_flags = ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True) + (f'-I{example_include_path}',)
+    if use_sphere_tracing:
+        build_flags += '-DSDF',
     module = ox.Module(ctx, cuda_src, compile_opts, pipeline_opts, build_flags)
     return module
 
