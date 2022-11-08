@@ -21,11 +21,11 @@ using Interval = cusvna::Interval<T>;
 #include "examples/cuda/quadtree.cuh"
 """
 
+do_plot = True
+
 if __name__ == "__main__":
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating quadtree for function {fname}...")
-
-    do_plot = True
     nlevels = 6 if do_plot else 15
 
     start_level = 2
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             break
 
         if do_plot:
-            ax.set_title(f'f(x,y)')
+            ax.set_title(f'level={current_level}')
             ax.imshow(z, zorder=0, vmin=-4, vmax=+4, cmap='seismic',
                     extent=[xmin, xmax, ymin, ymax], origin='lower')
             ax.contour(z, levels=[0], zorder=1, colors=['k'],

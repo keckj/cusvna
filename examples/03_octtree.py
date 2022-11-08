@@ -5,7 +5,7 @@ import matplotlib.patches
 
 from utils import *
 
-T = np.float32
+T = np.float64
 I = np.uint64
 
 kernel_src = f"""

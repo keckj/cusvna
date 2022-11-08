@@ -1,4 +1,4 @@
-/* this file is part of example 02_quadtree.py */
+/* this file is part of example 03_octree.py */
 
 template <unsigned int warps_per_block, unsigned int warpsize>
 __device__ I prefix_sum(I prefix,
@@ -90,6 +90,7 @@ __global__ void kernel(const T xmin, const T xmax,
         const T dy = (ymax - ymin) / nsplit;
         const T dx = (xmax - xmin) / nsplit;
         
+        #pragma unroll
         for(size_t offset=0; offset<8; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x4) >> 2);
             const size_t j = 2 * old_j + ((offset & 0x2) >> 1);
