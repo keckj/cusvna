@@ -2,6 +2,7 @@ import os, sys, logging
 import optix as ox
 import cupy as cp
 import numpy as np
+
 from PIL import Image, ImageOps
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -12,6 +13,7 @@ example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
 cuda_src = os.path.join(script_dir, "cuda", "levelset.cu")
 
 img_size = (1024, 768)
+display_iterations = False
 
 def compute_levelsets_bbox(centers, radii):
     out = cp.empty((centers.shape[0], 6), dtype='f4')
@@ -98,7 +100,7 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
     params['cam_V'] = [0, 0.828427, 0]
     params['cam_W'] = [0, 0, -2.0]
     params['trav_handle'] = gas.handle
-    params['rendering_mode'] = 1
+    params['rendering_mode'] = int(display_iterations)
 
     stream = cp.cuda.Stream()
 
