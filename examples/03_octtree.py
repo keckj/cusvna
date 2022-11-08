@@ -1,11 +1,10 @@
 import numpy as np
 import cupy as cp
-import matplotlib.pyplot as plt
-import matplotlib.patches
+import open3d as o3d
 
 from utils import *
 
-T = np.float64
+T = np.float32
 I = np.uint64
 
 kernel_src = f"""
@@ -25,8 +24,8 @@ if __name__ == "__main__":
     fname = r'f(x,y,z) = (x-2)^2(x+2)^2+(y-2)^2(y+2)^2+(z-2)^2(z+2)^2+(x^2y^2+x^2z^2+y^2z^2)+6*x*y*z-10(x^2+y^2+z^2)+22'
     logger.info(f"Generating octtree for function {fname}...")
 
-    do_plot = False
-    nlevels = 10
+    do_plot = True
+    nlevels = 3 if do_plot else 10
 
     start_level = 4
     end_level = start_level + nlevels
@@ -84,5 +83,30 @@ if __name__ == "__main__":
 
         if nactive == 0:
             break
+
+        if not do_plot:
+            continue
+            
+        indices = active_cell_indices[:nactive].get()
+        dz = (zmax - zmin) / Ntot
+        dy = (ymax - ymin) / Ntot
+        dx = (xmax - xmin) / Ntot
+
+        i = indices // (Ntot*Ntot)
+        j = (indices // Ntot) % Ntot
+        k = indices % Ntot
+
+        zi = zmin + (i+0.5)*dz
+        yi = ymin + (j+0.5)*dy
+        xi = xmin + (k+0.5)*dx
+
+        pts = o3d.geometry.PointCloud()
+        pts.points = o3d.utility.Vector3dVector(np.column_stack([xi, yi, zi]))
+        pts.colors = o3d.utility.Vector3dVector(np.random.uniform(0, 1, size=(nactive, 3)))
+
+        assert dx==dy==dz, (dx,dy,dz)
+        voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pts, dx)
+
+        o3d.visualization.draw_geometries([voxel_grid])
 
     logger.info("All done.")
