@@ -18,7 +18,7 @@ constexpr I N = 8;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-__global__ void kernel(const T xmin, const T xmax,
+__global__ void func_2d(const T xmin, const T xmax,
                        const T ymin, const T ymax,
                        const I level, unsigned char* sign) {{
     const size_t i = blockIdx.y * blockDim.y + threadIdx.y;
@@ -49,7 +49,7 @@ __global__ void kernel(const T xmin, const T xmax,
 """
 
 if __name__ == "__main__":
-    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('kernel',))
+    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('func_2d',))
 
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating grids for function {fname}...")

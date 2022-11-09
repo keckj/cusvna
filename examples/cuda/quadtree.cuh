@@ -63,11 +63,11 @@ __device__ I prefix_sum(I prefix,
 
 template <unsigned int warps_per_block, unsigned int warpsize>
 __launch_bounds__(warps_per_block * warpsize)
-__global__ void kernel(const T xmin, const T xmax,
+__global__ void quadtree(const T xmin, const T xmax,
                        const T ymin, const T ymax,
-                       const I start_level, const I end_level,
-                       const I current_level, const I current_active_cells,
-                       I* active_cells, I* active_cells_counter) {
+                       const I start_level, const I current_level,
+                       const I current_active_cells, const I max_active_cells,
+                       const I* active_cells_in, I* active_cells_out, I* active_cells_counter) {
     
     const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -75,34 +75,38 @@ __global__ void kernel(const T xmin, const T xmax,
     size_t cid[4];
 
     if (tid < current_active_cells) {
-        const size_t oid = ((current_level == start_level) ? tid : active_cells[tid]);
-        
+        const size_t oid = ((current_level == start_level) ? tid : active_cells_in[tid]);
         const size_t osplit = 1 << (current_level - 1);
+        
         const size_t old_i = (oid / osplit);
         const size_t old_j = (oid % osplit);
 
         const size_t nsplit = 1 << current_level;
         const T dx = (xmax - xmin) / nsplit;
         const T dy = (ymax - ymin) / nsplit;
+            
+        G index_generator;
         
         #pragma unroll 4
         for(size_t offset=0; offset<4; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x2) >> 1);
             const size_t j = 2 * old_j + ((offset & 0x1) >> 0);
+            
+            const size_t cidx = i*nsplit + j;
 
             const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
             const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
         
-            G index_generator;
             const AA x(xi, index_generator);
             const AA y(yi, index_generator);
+
             const AA xy = x*y;
             const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
         
             bool active = (z.sign() == cusvna::Sign::UNKNOWN);
             
             if (active) {
-                cid[nactive] = i*nsplit + j;
+                cid[nactive] = cidx;
                 nactive++;
             }
         }
@@ -112,6 +116,6 @@ __global__ void kernel(const T xmin, const T xmax,
     const I output_index = prefix_sum<warps_per_block, warpsize>(nactive, active_offsets, active_cells_counter);
 
     for(I offset=0; offset<nactive; offset++) {
-        active_cells[output_index + offset] = cid[offset];
+        active_cells_out[min(max_active_cells-1, output_index + offset)] = cid[offset];
     }
 }

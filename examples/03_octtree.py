@@ -5,7 +5,7 @@ from skimage import measure
 
 from utils import *
 
-T = np.float64
+T = np.float32
 I = np.uint64
 
 kernel_src = f"""
@@ -18,15 +18,15 @@ constexpr I N = 21;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-#include "examples/cuda/octtree.cuh"
+#include "examples/cuda/octree.cuh"
 """
 
 if __name__ == "__main__":
     fname = r'f(x,y,z) = (x-2)^2(x+2)^2+(y-2)^2(y+2)^2+(z-2)^2(z+2)^2+(x^2y^2+x^2z^2+y^2z^2)+6*x*y*z-10(x^2+y^2+z^2)+22'
-    logger.info(f"Generating octtree for function {fname}...")
+    logger.info(f"Generating octree for function {fname}.")
 
-    do_plot = False
-    nlevels = 3 if do_plot else 10
+    do_plot = True
+    nlevels = 3 if do_plot else 6
 
     start_level = 4
     end_level = start_level + nlevels
@@ -35,6 +35,7 @@ if __name__ == "__main__":
     ymin, ymax = -5, 5
     zmin, zmax = -5, 5
     
+    logger.info(f"Plotting has been {'enabled' if do_plot else 'disabled'}.")
     if do_plot:
         Nm = 128
         logger.info(f"Running marching cubes on a {Nm}^3 grid...")
@@ -59,9 +60,20 @@ if __name__ == "__main__":
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(V)
         mesh.triangles = o3d.utility.Vector3iVector(F)
+    
 
-    logger.info(f"Computing octtree with start_level={start_level} and end_level={end_level-1}...")
+    # build kernel
+    threads_per_block = 512
+    warpsize = int(cp.cuda.Device(0).attributes['WarpSize'])
+    warps_per_block = threads_per_block // warpsize;
+    threads_per_block = warps_per_block * warpsize
+    kname = f'octree<{warps_per_block},{warpsize}>'
+    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
+    assert warps_per_block <= warpsize, (warps_per_block, warpsize)
+    assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 
+
+    logger.info(f"Computing octree with start_level={start_level} and end_level={end_level}:")
     N = 2**start_level
     assert(2**(3*end_level) < np.iinfo(I).max)
 
@@ -69,15 +81,6 @@ if __name__ == "__main__":
     active_cell_indices_in  = cp.empty(nallocated, dtype=I)  # index buffer, should be large enough to handle end_level active cells count
     active_cell_indices_out = cp.empty(nallocated, dtype=I)
     active_cell_counter = cp.empty((), dtype=I)
-
-    threads_per_block = 512
-    warpsize = int(cp.cuda.Device(0).attributes['WarpSize'])
-    warps_per_block = threads_per_block // warpsize;
-    threads_per_block = warps_per_block * warpsize
-    kname = f'kernel<{warps_per_block},{warpsize}>'
-    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
-    assert warps_per_block <= warpsize, (warps_per_block, warpsize)
-    assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 
     start = cp.cuda.Event(disable_timing=False)
     end = cp.cuda.Event(disable_timing=False)

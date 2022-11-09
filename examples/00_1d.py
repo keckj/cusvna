@@ -18,7 +18,7 @@ constexpr I N = 16;
 using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
-__global__ void kernel(const T xmin, const T xmax, const I nintervals,
+__global__ void func_1d(const T xmin, const T xmax, const I nintervals,
                        const I k, T* a, T* b) {{
     const size_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nintervals) {{ return; }}
@@ -44,7 +44,7 @@ __global__ void kernel(const T xmin, const T xmax, const I nintervals,
 """
 
 if __name__ == "__main__":
-    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('kernel',))
+    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, ('func_1d',))
 
     xmin, xmax = -2, 2
     Ns = [8,16,32,64]

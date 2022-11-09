@@ -86,6 +86,8 @@ def build_module_and_extract_kernels_from_source(
     kernel_names,
     build_options = default_build_options,
 ):
+    logger.info(f"Building kernel(s) {', '.join(kernel_names)}...")
+
     def debug_dump_kernel():
         debug_dump_file = os.path.join(tempfile.gettempdir(), "cusvna_kernel.cu")
         debug_msg = f"Build failure, kernel source code has been dumped to file://{debug_dump_file}."

@@ -63,7 +63,7 @@ __device__ I prefix_sum(I prefix,
 
 template <unsigned int warps_per_block, unsigned int warpsize>
 __launch_bounds__(warps_per_block * warpsize)
-__global__ void kernel(const T xmin, const T xmax,
+__global__ void octree(const T xmin, const T xmax,
                        const T ymin, const T ymax,
                        const T zmin, const T zmax,
                        const I start_level, const I current_level, 
@@ -90,7 +90,7 @@ __global__ void kernel(const T xmin, const T xmax,
         
         G index_generator;
         
-        #pragma unroll
+        #pragma unroll 8
         for(size_t offset=0; offset<8; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x4) >> 2);
             const size_t j = 2 * old_j + ((offset & 0x2) >> 1);
