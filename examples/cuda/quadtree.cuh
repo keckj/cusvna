@@ -69,8 +69,6 @@ __global__ void kernel(const T xmin, const T xmax,
                        const I current_level, const I current_active_cells,
                        I* active_cells, I* active_cells_counter) {
     
-    __shared__ I active_offsets[warps_per_block];
-    
     const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     I nactive = 0;
@@ -110,6 +108,7 @@ __global__ void kernel(const T xmin, const T xmax,
         }
     }
 
+    __shared__ I active_offsets[warps_per_block + 1];
     const I output_index = prefix_sum<warps_per_block, warpsize>(nactive, active_offsets, active_cells_counter);
 
     for(I offset=0; offset<nactive; offset++) {

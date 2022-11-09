@@ -3,4 +3,5 @@ cupy
 matplotlib
 Pillow
 open3d
+skimage
 git+https://github.com/mortacious/python-optix

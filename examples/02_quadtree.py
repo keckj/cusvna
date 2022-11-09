@@ -21,7 +21,7 @@ using Interval = cusvna::Interval<T>;
 #include "examples/cuda/quadtree.cuh"
 """
 
-do_plot = True
+do_plot = False
 
 if __name__ == "__main__":
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'

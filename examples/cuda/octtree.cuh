@@ -66,23 +66,21 @@ __launch_bounds__(warps_per_block * warpsize)
 __global__ void kernel(const T xmin, const T xmax,
                        const T ymin, const T ymax,
                        const T zmin, const T zmax,
-                       const I start_level, const I end_level,
-                       const I current_level, const I current_active_cells,
-                       I* active_cells, I* active_cells_counter) {
-    
-    __shared__ I active_offsets[warps_per_block];
+                       const I start_level, const I current_level, 
+                       const I current_active_cells, const I max_active_cells,
+                       const I* active_cells_in, I* active_cells_out, I* active_cells_counter) {
     
     const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     I nactive = 0;
     size_t cid[8];
-
+    
     if (tid < current_active_cells) {
-        const size_t oid = ((current_level == start_level) ? tid : active_cells[tid]);
-        
+        const size_t oid = ((current_level == start_level) ? tid : active_cells_in[tid]);
         const size_t osplit = 1 << (current_level - 1);
-        const size_t old_i = (oid / osplit / osplit);
-        const size_t old_j = ((oid / osplit) % osplit);
+        
+        const size_t old_i = (oid / (osplit * osplit));
+        const size_t old_j = (oid / osplit) % osplit;
         const size_t old_k = (oid % osplit);
 
         const size_t nsplit = 1 << current_level;
@@ -90,17 +88,20 @@ __global__ void kernel(const T xmin, const T xmax,
         const T dy = (ymax - ymin) / nsplit;
         const T dx = (xmax - xmin) / nsplit;
         
+        G index_generator;
+        
         #pragma unroll
         for(size_t offset=0; offset<8; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x4) >> 2);
             const size_t j = 2 * old_j + ((offset & 0x2) >> 1);
             const size_t k = 2 * old_k + ((offset & 0x1) >> 0);
 
+            const size_t cidx = (i*nsplit + j)*nsplit + k; 
+
             const Interval zi(zmin + i*dz, zmin + (i+1)*dz);
             const Interval yi(ymin + j*dy, ymin + (j+1)*dy);
             const Interval xi(xmin + k*dx, xmin + (k+1)*dx);
-        
-            G index_generator;
+
             const AA z(zi, index_generator);
             const AA y(yi, index_generator);
             const AA x(xi, index_generator);
@@ -118,18 +119,19 @@ __global__ void kernel(const T xmin, const T xmax,
                  - T(10)*(xx+yy+zz)
                  + T(22));
         
-            bool active = (w.sign() == cusvna::Sign::UNKNOWN);
-            
+            const bool active = (w.sign() == cusvna::Sign::UNKNOWN);
+
             if (active) {
-                cid[nactive] = (i*nsplit + j)*nsplit + k;
+                cid[nactive] = cidx;
                 nactive++;
             }
         }
     }
 
+    __shared__ I active_offsets[warps_per_block + 1];
     const I output_index = prefix_sum<warps_per_block, warpsize>(nactive, active_offsets, active_cells_counter);
 
     for(I offset=0; offset<nactive; offset++) {
-        active_cells[output_index + offset] = cid[offset];
+        active_cells_out[min(max_active_cells-1, output_index + offset)] = cid[offset];
     }
 }
