@@ -1,3 +1,6 @@
 [submodule "ext/libaffa"]
 	path = ext/libaffa
 	url = https://github.com/ogay/libaffa
+[submodule "ext/python-optix"]
+	path = ext/python-optix
+	url = git@github.com:keckj/python-optix.git

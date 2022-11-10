@@ -1,8 +1,8 @@
 /* this file is part of example 04_raytracing.py */
 #include <optix.h>
 
-#include "examples/cuda/vec_math.cuh"
-#include "examples/cuda/helpers.cuh"
+#include "ext/python-optix/examples/cuda/vec_math.h"
+#include "ext/python-optix/examples/cuda/helpers.h"
 
 #include <cusvna/aa.cuh>
 

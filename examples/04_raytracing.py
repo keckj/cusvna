@@ -5,12 +5,11 @@ import numpy as np
 
 from PIL import Image, ImageOps
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-log = logging.getLogger()
+from utils import logger as cusvna_logger
 
 script_dir = os.path.dirname(__file__)
 example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
-cuda_src = os.path.join(script_dir, "cuda", "levelset.cu")
+cuda_src = os.path.join(script_dir, "cuda", "raytracing.cu")
 
 img_size = (1024, 768)
 display_iterations = False
@@ -115,7 +114,7 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
 
 
 if __name__ == "__main__":
-    logger = ox.Logger(log)
+    logger = ox.Logger(cusvna_logger)
     ctx = ox.DeviceContext(validation_mode=True, log_callback_function=logger, log_callback_level=4)
     ctx.cache_enabled = False
 
@@ -138,5 +137,3 @@ if __name__ == "__main__":
     img = img.reshape(img_size[1], img_size[0], 4)
     img = ImageOps.flip(Image.fromarray(img, 'RGBA'))
     img.show()
-
-

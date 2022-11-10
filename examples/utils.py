@@ -7,12 +7,14 @@ script_dir = os.path.join(os.path.dirname(__file__))
 cusvna_include_dir = os.path.realpath(os.path.join(script_dir, '..'))
 
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 stream = logging.StreamHandler()
 stream.setFormatter(formatter)
+stream.setLevel(os.environ.get("CUSVNA_LOG_LEVEL", "DEBUG"))
 
 logger = logging.getLogger("cusvna")
 logger.addHandler(stream)
-logger.setLevel(os.environ.get("CUSVNA_LOG_LEVEL", "INFO"))
+logger.setLevel(os.environ.get("CUSVNA_LOG_LEVEL", "DEBUG"))
 
 def _extract_cuda_version(v):
     return f"{v // 1000}.{(v % 1000) // 10}"
