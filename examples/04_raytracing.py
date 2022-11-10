@@ -116,7 +116,6 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
 if __name__ == "__main__":
     logger = ox.Logger(cusvna_logger)
     ctx = ox.DeviceContext(validation_mode=True, log_callback_function=logger, log_callback_level=4)
-    ctx.cache_enabled = False
 
     centers = cp.array([[0.0, 0.0, 0.0], [-0.5, -0.5, -0.5], [0.5, 0.5, 0]], dtype=np.float32)
     radii = cp.array([0.25, 0.1, 0.25], dtype=np.float32)
