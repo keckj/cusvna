@@ -39,23 +39,31 @@ extern "C" {
 __constant__ Params params;
 }
 
-__device__ float3 df(const float3& p, const float3& origin, const float radius) {
-    const float3 dx = p - origin;
-    return dx / norm3df(dx.x, dx.y, dx.z);
-}
-
 template <typename T>
-__device__ T f(const T& x, const T& y, const T& z,
+__device__ T f(const T& x_, const T& y_, const T& z_,
                    const float3& origin, const float radius) {
-    const T dx(x-origin.x);
-    const T dy(y-origin.y);
-    const T dz(z-origin.z);
-    return dx*dx + dy*dy + dz*dz - radius*radius;
+    const T x((x_-origin.x)/(0.25f*radius));
+    const T y((y_-origin.y)/(0.25f*radius));
+    const T z((z_-origin.z)/(0.25f*radius));
+    const T xx(x*x);
+    const T yy(y*y);
+    const T zz(z*z);
+    return xx*xx + yy*yy + zz*zz + 2.0f*(xx*yy + xx*zz + yy*zz) + 8.0f*x*y*z - 10.0f*(xx+yy+zz) + 20.0f;
 }
 
 __device__ float f(const float3& p, const float3& origin, const float radius) {
     return f<float>(p.x, p.y, p.z, origin, radius);
 }
+
+__device__ float3 df(const float3& p, const float3& origin, const float radius) {
+    const float3 x = (p - origin)/(0.25f*radius);
+    const float3 xx = x*x;
+    float dx = 4.0f*xx.x*x.x + 4.0f*x.x*(xx.y + xx.z) + 8.0f*x.y*x.z - 20.0f*x.x;
+    float dy = 4.0f*xx.y*x.y + 4.0f*x.y*(xx.x + xx.z) + 8.0f*x.x*x.z - 20.0f*x.y;
+    float dz = 4.0f*xx.z*x.z + 4.0f*x.z*(xx.x + xx.y) + 8.0f*x.x*x.y - 20.0f*x.z;
+    return normalize(make_float3(dx, dy, dz));
+}
+
 
 extern "C" __global__ void __intersection__levelset() {
     const levelset::LevelsetHitGroupData* hit_group_data = \
@@ -75,7 +83,7 @@ extern "C" __global__ void __intersection__levelset() {
     using T = float;
     using I = unsigned int;
     using G = cusvna::LocalThreadIndex<I>;
-    constexpr I N = 8;
+    constexpr I N = 16;
     using AA = cusvna::AA<T,I,G,N>;
 
     /* See Spelunking the Deep: Guaranteed Queries on General Neural Implicit Surfaces via Range Analysis, procedure 2 */
@@ -93,6 +101,7 @@ extern "C" __global__ void __intersection__levelset() {
         if (((f0 < 0) ^ (fc < 0)) && t >= ray_tmin) {
             const float3 normal = df(pc, origin, radius);
             optixReportIntersection(t, 0, float3_as_ints(normal), i);
+            break; /* stop at first intersection, we do not use subsequent intersections for rendering */
         }
         const float3 c = ray_orig + (t+sigma/2)*ray_dir;
         const float3 v = (sigma/2)*ray_dir;
