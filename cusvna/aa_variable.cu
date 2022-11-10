@@ -1,11 +1,13 @@
 
 #include <cuda/std/utility>
+#include <cuda/std/type_traits>
+#include <cuda/std/tuple>
 
 namespace detail {
     
     template <int... Is>
     using integer_sequence = cuda::std::integer_sequence<int, Is...>;
-
+    
     template <int I0=0>
     constexpr bool is_ascending_seq() { return true; }
 
@@ -119,7 +121,6 @@ namespace detail {
     /* merge sorted integer sequences */
     template <typename, typename>
     struct merge_sorted_sequences {
-        using type = integer_sequence<>;
     };
     
     template <int I0, int... Is, int J0, int... Js>
@@ -135,36 +136,106 @@ namespace detail {
             typename prepend_to_sequence<J0, ge>::type
         >::type;
     };
-
     
+    template <int... Is>
+    struct merge_sorted_sequences<integer_sequence<Is...>, integer_sequence<>> {
+        using type = integer_sequence<Is...>;
+    };
+    
+    template <int... Js>
+    struct merge_sorted_sequences<integer_sequence<>, integer_sequence<Js...>> {
+        using type = integer_sequence<Js...>;
+    };
+    
+    template <>
+    struct merge_sorted_sequences<integer_sequence<>, integer_sequence<>> {
+        using type = integer_sequence<>;
+    };
+    
+    static_assert(
+        std::is_same<
+            merge_sorted_sequences<
+                integer_sequence<1,3,7>,
+                integer_sequence<0,2,4,6,7>
+                >::type,
+            integer_sequence<0,1,2,3,4,6,7>
+            >::value,
+            "merge_sorted_sequences error"
+            );
 
 
-}
+    template <template<typename, int...> class, typename, typename>
+    struct TypeFromSequence {};
+
+    template <template<typename, int...> class cls, typename T, int... Is>
+    struct TypeFromSequence<cls, T, integer_sequence<Is...>> {
+        using type = cls<T,Is...>;
+    };
+
+
+    template <typename, typename>
+    struct MergedType {};
+
+    template <template<typename, int...> class cls, typename T, int... Is, int... Js>
+    struct MergedType<cls<T,Is...>, cls<T,Js...>> {
+        using type = typename TypeFromSequence<
+            cls,
+            T,
+            typename merge_sorted_sequences<
+                integer_sequence<Is...>,
+                integer_sequence<Js...>
+            >::type
+        >::type;
+    };
+
+    template <typename lhs, typename rhs>
+    using merged_t = typename MergedType<lhs, rhs>::type;
+
+} /* end of namespace detail */
+
+using detail::merged_t;
 
 template <typename T, int... Is>
-class A {
-    static_assert(detail::is_ascending_seq<Is...>(), "Indices are not sorted.");
+class AA {
+    static_assert(detail::is_ascending_seq<Is...>(), "Indices are not sorted in strictly ascending order.");
 
     public:
         static constexpr int N = sizeof...(Is);
-        A(): x0(0), xi{} {}
-        T x0;
-        T xi[N];
+        AA(): b(0), x{} {}
+        T b;
+        T x[N];
         
-        template <int I> T& get() { static_assert(I<N); return xi[I]; }
-        template <int I> const T& get() const { static_assert(I<N); return xi[I]; }
+        template <int I> 
+        static constexpr int idx() { 
+            static_assert(I<N); 
+            return cuda::std::get<I>(cuda::std::make_tuple(Is...));
+        }
 };
 
-template <typename T, int... Is, int... Js>
-T operator+(const A<T,Is...>& lhs, const A<T,Js...>& rhs) {
-    return T(0);
+template <typename T, int... Is, int... Js, typename ResultType=merged_t<AA<T,Is...>, AA<T,Js...>>>
+ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    return ResultType();
 }
 
 #include <iostream>
 
+#ifndef __CUDACC_RTC__
+    template <typename T, int... Is>
+    __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val) {
+        using V = AA<T,Is...>;
+        os << "AA(b=" << val.b << ", x=[";
+        for (int i = 0; i < V::N; ++i) {
+            os << V::template idx<0>() << ": " << val.x[i];
+            if (i != V::N-1) { os << ", "; }
+        }
+        os << "])";
+        return os;
+    }
+#endif
+
 int main()
 {
-    A<float> a;
-    A<float,0,1> b;
-    std::cout << b + b << std::endl;
+    AA<float> a;
+    AA<float,0,1> b;
+    std::cout << (b + b) << std::endl;
 }
