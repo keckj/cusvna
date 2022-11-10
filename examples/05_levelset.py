@@ -198,7 +198,7 @@ def update_state(output_buffer, state):
 
 def launch_subframe(output_buffer, state):
     state.params.frame_buffer = output_buffer.map()
-    
+
     state.pipeline.launch(state.sbt, dimensions=state.launch_dimensions,
             params=state.params.handle, stream=output_buffer.stream)
 
@@ -241,11 +241,11 @@ def create_module(state):
             num_payload_values=3,
             num_attribute_values=4,
             pipeline_launch_params_variable_name="params")
-    
+
     compile_opts = ox.ModuleCompileOptions(
             max_register_count=ox.ModuleCompileOptions.DEFAULT_MAX_REGISTER_COUNT,
             opt_level=opt_level, debug_level=debug_level)
-    
+
     cuda_source = os.path.join(script_dir, 'cuda', 'levelset.cu')
 
     example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
