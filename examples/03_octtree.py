@@ -25,7 +25,7 @@ if __name__ == "__main__":
     fname = r'f(x,y,z) = (x-2)^2(x+2)^2+(y-2)^2(y+2)^2+(z-2)^2(z+2)^2+(x^2y^2+x^2z^2+y^2z^2)+6*x*y*z-10(x^2+y^2+z^2)+22'
     logger.info(f"Generating octree for function {fname}.")
 
-    do_plot = True
+    do_plot = False
     nlevels = 3 if do_plot else 6
 
     start_level = 4
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     xmin, xmax = -5, 5
     ymin, ymax = -5, 5
     zmin, zmax = -5, 5
-    
+
     logger.info(f"Plotting has been {'enabled' if do_plot else 'disabled'}.")
     if do_plot:
         Nm = 128
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(V)
         mesh.triangles = o3d.utility.Vector3iVector(F)
-    
+
 
     # build kernel
     threads_per_block = 512
@@ -95,8 +95,8 @@ if __name__ == "__main__":
         start.record()
         kernel((G,), (B,),
                 (T(xmin), T(xmax), T(ymin), T(ymax), T(zmin), T(zmax),
-                   I(start_level), I(current_level), 
-                   I(nactive), I(nallocated), 
+                   I(start_level), I(current_level),
+                   I(nactive), I(nallocated),
                    active_cell_indices_in, active_cell_indices_out, active_cell_counter))
         end.record()
         end.synchronize()
@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
         if nactive == 0:
             break
-        
+
         if nactive > nallocated:
             logger.warning(f"You need to allocate more indices to compute level {current_level}: nactive={nactive:2.2e} > nallocated={nallocated:2.2e}.")
             break

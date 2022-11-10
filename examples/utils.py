@@ -13,6 +13,7 @@ stream.setFormatter(formatter)
 stream.setLevel(os.environ.get("CUSVNA_LOG_LEVEL", "DEBUG"))
 
 logger = logging.getLogger("cusvna")
+logger.propagate = False
 logger.addHandler(stream)
 logger.setLevel(os.environ.get("CUSVNA_LOG_LEVEL", "DEBUG"))
 

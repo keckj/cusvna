@@ -25,12 +25,12 @@ if __name__ == "__main__":
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating quadtree for function {fname}.")
 
-    do_plot = True
+    do_plot = False
     nlevels = 6 if do_plot else 21
 
     start_level = 2
     end_level = start_level + nlevels
-    
+
     xmin, xmax = -2, 2
     ymin, ymax = -2, 2
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     else:
         axes = np.full(nlevels, fill_value=None)
 
-    
+
     # build kernel
     threads_per_block = 512
     warpsize = int(cp.cuda.Device(0).attributes['WarpSize'])
@@ -81,8 +81,8 @@ if __name__ == "__main__":
         start.record()
         kernel((G,), (B,),
                 (T(xmin), T(xmax), T(ymin), T(ymax),
-                   I(start_level), I(current_level), 
-                   I(nactive), I(nallocated), 
+                   I(start_level), I(current_level),
+                   I(nactive), I(nallocated),
                    active_cell_indices_in, active_cell_indices_out, active_cell_counter))
         end.record()
         end.synchronize()
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
         if nactive == 0:
             break
-        
+
         if nactive > nallocated:
             logger.warning(f"You need to allocate more indices to compute level {current_level}: nactive={nactive:2.2e} > nallocated={nallocated:2.2e}.")
             break
@@ -123,7 +123,7 @@ if __name__ == "__main__":
                 ax.add_patch(rectangle)
 
             fig.show()
-        
+
         active_cell_indices_in, active_cell_indices_out = active_cell_indices_out, active_cell_indices_in
 
     logger.info("All done.")
