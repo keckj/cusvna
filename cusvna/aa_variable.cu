@@ -10,10 +10,12 @@
 
 namespace cusvna {
 
-template <typename T, int... Is>
+using detail::type_id, detail::type_id_t;
+
+template <typename T, type_id_t... Is>
 class AA {
-    /* Is... represent the indices of noise symbols. It is assumed to be sorted. */
-    static_assert(detail::is_ascending_seq<Is...>(), "Indices are not sorted in strictly ascending order.");
+    /* Is... represent the unique indices of noise symbols. 
+       Is cannot be sorted because type_id_t does not support comparisson (just equality). */
 
     public:
         __host__ __device__ AA(const T& b=T(0));
@@ -25,7 +27,7 @@ class AA {
         explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
 
                                              static constexpr int N = sizeof...(Is);   /* number of active noise symbols 0 <= n <= N. */
-        template <int I> __host__ __device__ static constexpr int idx();               /* returns Is[I] which represents the index of noise symbol number I. */
+        template <int I> __host__ __device__ static constexpr type_id_t idx();               /* returns Is[I] which represents the index of noise symbol number I. */
         
         /* base coefficient of the affine form */
         __host__ __device__       T& b();        
@@ -73,75 +75,75 @@ class AA {
 
     
 /* implementation */   
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>::AA(const T& b): m_b(b), m_x{} {}
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>::AA(const AA& other): m_b(other.m_b), m_x(other.m_x) {}
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>::AA(const Interval<T>& interval): m_b(interval.midpoint()), m_x{interval.radius()} {
     static_assert(N==1, "Can only construct from interval when there is only one noise symbol.");
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <int I> 
-constexpr int AA<T,Is...>::idx() { 
+constexpr type_id_t AA<T,Is...>::idx() { 
     static_assert(I<N); 
     return cuda::std::get<I>(cuda::std::make_tuple(Is...));
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 T& AA<T,Is...>::b() {
     return m_b;
 }
         
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 const T& AA<T,Is...>::b() const {
     return m_b;
 }
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <int I> 
 T& AA<T,Is...>::x() {
     static_assert(I<N); 
     return cuda::std::get<I>(m_x);
 }
         
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <int I> 
 const T& AA<T,Is...>::x() const {
     static_assert(I<N); 
     return cuda::std::get<I>(m_x);
 }
         
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
 AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) {
     this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
     return *this;
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
 const AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) const {
     this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
     return *this;
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args, int... Ks> 
 void AA<T,Is...>::apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) {
     (f(Ks, this->idx<Ks>(), this->x<Ks>(), args...), ...);
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args, int... Ks> 
 void AA<T,Is...>::apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) const {
     (f(Ks, this->idx<Ks>(), this->x<Ks>(), args...), ...);
 }
         
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <template <int> class Functor, typename... Args>
 const AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) const {
     if constexpr (N > 0) {
@@ -150,7 +152,7 @@ const AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) const {
     return *this;
 }
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <template <int> class Functor, int K, typename... Args>
 void AA<T,Is...>::constexpr_apply_impl(Args&&... args) const {
     Functor<K>()(*this, args...);
@@ -159,7 +161,7 @@ void AA<T,Is...>::constexpr_apply_impl(Args&&... args) const {
     }
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <template <int> class Functor, typename... Args>
 AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) {
     if constexpr (N > 0) {
@@ -168,7 +170,7 @@ AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) {
     return *this;
 }
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 template <template <int> class Functor, int K, typename... Args>
 void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
     Functor<K>()(*this, args...);
@@ -176,79 +178,81 @@ void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
         this->constexpr_apply_impl<Functor,K+1,Args...>(std::forward<Args>(args)...);
     }
 }
-        
-template <typename T, int... Is, int... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
+
+#if 0
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out;
     return out;
 }
+#endif
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 T AA<T,Is...>::radius() const {
     T r(0);
-    this->apply([&](int k, int i, const T& xi) { r += ::abs(xi); });
+    this->apply([&](int k, type_id_t i, const T& xi) { r += ::abs(xi); });
     return r;
 };
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>::operator Interval<T>() const {
     const T c = this->b();
     const T r = this->radius();
     return Interval<T>(c-r, c+r);
 }
     
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 Interval<T> AA<T,Is...>::interval() const {
     return Interval<T>(*this);
 };
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 Sign AA<T,Is...>::sign() const {
     return this->interval().sign();
 };
         
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...> AA<T,Is...>::operator+() const {
     AA<T,Is...> out(*this);
     out.b() = +out.b();
-    return out.apply([](int k, int i, T& xi) { xi = +xi; });
+    return out.apply([](int k, type_id_t i, T& xi) { xi = +xi; });
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...> AA<T,Is...>::operator-() const {
     AA<T,Is...> out(*this);
     out.b() = -out.b();
-    return out.apply([](int k, int i, T& xi) { xi = -xi; });
+    return out.apply([](int k, type_id_t i, T& xi) { xi = -xi; });
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator+=(const T& other)  {
     this->b() += other;
     return *this;
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator-=(const T& other)  {
     this->b() -= other;
     return *this;
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator*=(const T& other)  {
     this->b() *= other;
-    return this->apply([&](int k, int i, T& xi) { xi *= other; });
+    return this->apply([&](int k, type_id_t i, T& xi) { xi *= other; });
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator/=(const T& other)  {
     this->b() /= other;
-    return this->apply([&](int k, int i, T& xi) { xi /= other; });
+    return this->apply([&](int k, type_id_t i, T& xi) { xi /= other; });
 }
 
 namespace impl {
     template <int K>
     struct inplace_add_functor {
-        template <typename T, int... Is>
+        template <typename T, type_id_t... Is>
         __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
             lhs.template x<K>() += rhs.template x<K>(); 
         }
@@ -256,20 +260,20 @@ namespace impl {
     
     template <int K>
     struct inplace_subtract_functor {
-        template <typename T, int... Is>
+        template <typename T, type_id_t... Is>
         __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
             lhs.template x<K>() -= rhs.template x<K>(); 
         }
     };
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator+=(const AA<T,Is...>& other)  {
     this->b() += other.b();
     return this->constexpr_apply<impl::inplace_add_functor>(other);
 }
 
-template <typename T, int... Is>
+template <typename T, type_id_t... Is>
 AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
     this->b() -= other.b();
     return this->constexpr_apply<impl::inplace_subtract_functor>(other);
@@ -281,11 +285,11 @@ AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
     namespace impl {
         template <int K>
         struct print_functor {
-            template <typename T, int... Is>
+            template <typename T, type_id_t... Is>
             __host__ __device__ void operator()(const AA<T,Is...>& val, std::ostream& os) const {
 #ifndef __CUDA_ARCH__
                 using V = AA<T,Is...>;
-                os << V::template idx<K>() << ": " << val.template x<K>();
+                os << intptr_t(V::template idx<K>()) - intptr_t(cusvna::detail::type_id<cusvna::detail::integer_sequence<0>>) << ": " << val.template x<K>();
                 if constexpr (K != V::N-1) {
                     os << ", ";
                 }
@@ -294,7 +298,7 @@ AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
         };
     }
 
-    template <typename T, int... Is>
+    template <typename T, type_id_t... Is>
     __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val) {
         using V = AA<T,Is...>;
 
@@ -308,24 +312,29 @@ AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
 
 } /* end of namespace cusvna */
 
+
+#define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::type_id<cusvna::detail::integer_sequence<__COUNTER__>>>(interval)
+
+
 int main() {
     using T = float;
-    using cusvna::AA, cusvna::Interval;
-    const Interval<T> ii(0,3);
-    AA<T,__COUNTER__> x(ii);
-    AA<T,__COUNTER__> y(ii);
+    using cusvna::Interval;
+    const Interval<T> ii(-2,2);
+    auto x = aa_from_interval(ii);
+    auto y = aa_from_interval(ii);
+    std::cout << x << std::endl;
+    std::cout << y << std::endl;
     x += 1.0f;
     x *= 2.0f;
     y -= 1.0f;
     y /= 2.0f;
     x += x;
     y -= y;
-    const Interval<T> jj(x.interval());
     std::cout << ii << std::endl;
     std::cout << x << std::endl;
     std::cout << y << std::endl;
-    std::cout << ii.radius() << std::endl;
     std::cout << (+x).radius() << std::endl;
     std::cout << (-y).radius() << std::endl;
+    std::cout << x.interval() << std::endl;
     std::cout << x.sign() << std::endl;
 }

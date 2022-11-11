@@ -17,6 +17,7 @@ namespace cusvna {
 
     template <typename T>
     struct Interval {
+        using type = T;
         T a, b;
         Interval() = default;
         Interval(const Interval& other) = default;
