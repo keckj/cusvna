@@ -79,7 +79,7 @@ def determine_cuda_include_dir(logger):
 
 
 cuda_include_dir = determine_cuda_include_dir(logger);
-default_build_options = (f'-I{cuda_include_dir}', f'-I{cusvna_include_dir}', '-std=c++17',
+default_build_options = (f'-I{cuda_include_dir}', f'-I{cusvna_include_dir}', '--std=c++17',
                             '--use_fast_math', '--restrict', '--ptxas-options', '-O3')
 
 
