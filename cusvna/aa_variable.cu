@@ -34,6 +34,13 @@ class AA {
 
                          const T& b() const;
         template <int I> const T& x() const;
+        
+        template <typename Function>
+        const AA& apply(Function&& f) const;
+
+    private:
+        template <typename Function, int... Ks>
+        const AA& apply_impl(Function&& f, detail::integer_sequence<Ks...>) const;
 
     protected:
         T m_b;
@@ -84,6 +91,19 @@ const T& AA<T,Is...>::x() const {
     return cuda::std::get<I>(m_x);
 }
         
+template <typename T, int... Is>
+template <template <int, int> Functor>
+const AA<T,Is...>& AA<T,Is...>::apply() const {
+    return this->apply_impl(std::forward<Function>(f), detail::make_integer_sequence<sizeof...(Is)>{});
+}
+    
+template <typename T, int... Is>
+template <typename Function, int... Ks>
+const AA<T,Is...>& AA<T,Is...>::apply_impl(Function&& f, detail::integer_sequence<Ks...>) const {
+    (f(Ks, Is, this->x<Ks>()), ...);
+    return *this;
+}
+        
 template <typename T, int... Is, int... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     return ResultType();
@@ -93,12 +113,21 @@ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     template <typename T, int... Is>
     __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val) {
         using V = AA<T,Is...>;
+
+        template <int K, int I>
+        struct functor {
+            void operator()(std::ostream& os, const T& xi) const {
+                os << I << ": " << xi;
+                if constexpr (K != V::N-1) {
+                    os << ", ";
+                }
+            }
+        };
+
         os << "AA(b=" << val.b() << ", x=[";
-        for (int i = 0; i < V::N; ++i) {
-            os << V::template idx<0>() << ": " << val.template x<0>();
-            if (i != V::N-1) { os << ", "; }
-        }
+        val.apply<functor>(os);
         os << "])";
+
         return os;
     }
 #endif

@@ -9,6 +9,9 @@ namespace detail {
     template <int... Is>
     using integer_sequence = cuda::std::integer_sequence<int, Is...>;
     
+    template <size_t N>
+    using make_integer_sequence = cuda::std::make_integer_sequence<int, N>;
+    
     template <int I0=0>
     constexpr bool is_ascending_seq() { return true; }
 
