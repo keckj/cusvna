@@ -39,7 +39,18 @@ class AA {
         __host__ __device__ Interval<T> interval() const; /* cast to an interval */
         __host__ __device__ Sign sign() const;            /* shortcut for Interval<T>(*this).sign() */
         __host__ __device__ void print() const;           /* alternative to std::cout for nvrtc */
-        
+            
+        __host__ __device__ AA operator-() const;
+        __host__ __device__ AA operator+() const;
+
+        __host__ __device__ AA& operator-=(const T& other);
+        __host__ __device__ AA& operator+=(const T& other);
+        __host__ __device__ AA& operator*=(const T& other);
+        __host__ __device__ AA& operator/=(const T& other);
+            
+        __host__ __device__ AA& operator-=(const AA& other);
+        __host__ __device__ AA& operator+=(const AA& other);
+    
         /* apply N times a functor with arguments (k, Is[k], x[k], args...) where k=range(N) */
         template <typename Functor, typename... Args> __host__ __device__       AA& apply(Functor&& f, Args&&... args);
         template <typename Functor, typename... Args> __host__ __device__ const AA& apply(Functor&& f, Args&&... args) const;
@@ -173,22 +184,97 @@ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
 }
     
 template <typename T, int... Is>
-__host__ __device__ T AA<T,Is...>::radius() const {
+T AA<T,Is...>::radius() const {
     T r(0);
-    this->apply([&](int k, int i, const T& xi) { r += xi; });
+    this->apply([&](int k, int i, const T& xi) { r += ::abs(xi); });
     return r;
 };
     
 template <typename T, int... Is>
-__host__ __device__ Interval<T> AA<T,Is...>::interval() const {
+AA<T,Is...>::operator Interval<T>() const {
+    const T c = this->b();
+    const T r = this->radius();
+    return Interval<T>(c-r, c+r);
+}
+    
+template <typename T, int... Is>
+Interval<T> AA<T,Is...>::interval() const {
     return Interval<T>(*this);
 };
 
 template <typename T, int... Is>
-__host__ __device__ Sign AA<T,Is...>::sign() const {
+Sign AA<T,Is...>::sign() const {
     return this->interval().sign();
 };
         
+template <typename T, int... Is>
+AA<T,Is...> AA<T,Is...>::operator+() const {
+    AA<T,Is...> out(*this);
+    out.b() = +out.b();
+    return out.apply([](int k, int i, T& xi) { xi = +xi; });
+}
+
+template <typename T, int... Is>
+AA<T,Is...> AA<T,Is...>::operator-() const {
+    AA<T,Is...> out(*this);
+    out.b() = -out.b();
+    return out.apply([](int k, int i, T& xi) { xi = -xi; });
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator+=(const T& other)  {
+    this->b() += other;
+    return *this;
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator-=(const T& other)  {
+    this->b() -= other;
+    return *this;
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator*=(const T& other)  {
+    this->b() *= other;
+    return this->apply([&](int k, int i, T& xi) { xi *= other; });
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator/=(const T& other)  {
+    this->b() /= other;
+    return this->apply([&](int k, int i, T& xi) { xi /= other; });
+}
+
+namespace impl {
+    template <int K>
+    struct inplace_add_functor {
+        template <typename T, int... Is>
+        __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
+            lhs.template x<K>() += rhs.template x<K>(); 
+        }
+    };
+    
+    template <int K>
+    struct inplace_subtract_functor {
+        template <typename T, int... Is>
+        __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
+            lhs.template x<K>() -= rhs.template x<K>(); 
+        }
+    };
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator+=(const AA<T,Is...>& other)  {
+    this->b() += other.b();
+    return this->constexpr_apply<impl::inplace_add_functor>(other);
+}
+
+template <typename T, int... Is>
+AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
+    this->b() -= other.b();
+    return this->constexpr_apply<impl::inplace_subtract_functor>(other);
+}
+    
 
 #ifndef __CUDACC_RTC__
     /* example for apply_constexpr, there is no templated lambdas until c++ 20 so we use a struct */
@@ -228,11 +314,18 @@ int main() {
     const Interval<T> ii(0,3);
     AA<T,__COUNTER__> x(ii);
     AA<T,__COUNTER__> y(ii);
-    auto z = x + y;
+    x += 1.0f;
+    x *= 2.0f;
+    y -= 1.0f;
+    y /= 2.0f;
+    x += x;
+    y -= y;
+    const Interval<T> jj(x.interval());
+    std::cout << ii << std::endl;
     std::cout << x << std::endl;
     std::cout << y << std::endl;
     std::cout << ii.radius() << std::endl;
-    std::cout << x.radius() << std::endl;
-    std::cout << y.radius() << std::endl;
-    std::cout << x + y << std::endl;
+    std::cout << (+x).radius() << std::endl;
+    std::cout << (-y).radius() << std::endl;
+    std::cout << x.sign() << std::endl;
 }
