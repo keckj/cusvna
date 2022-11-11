@@ -2,6 +2,7 @@
 #include <cuda/std/utility>
 #include <cuda/std/type_traits>
 #include <cuda/std/tuple>
+#include <cuda/std/array>
 
 namespace cusvna {
 namespace detail {
