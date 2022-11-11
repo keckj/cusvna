@@ -192,9 +192,26 @@ namespace detail {
         >::type;
     };
 
+    
     template <typename lhs, typename rhs>
     using merged_t = typename MergedType<lhs, rhs>::type;
 
+    using type_id_t = void(*)();
+
+    template <typename T>
+    struct IdGen {
+        static constexpr type_id_t get_unique_id() {
+            return IdGen::dummy;
+        }
+        private:
+            static void dummy() {};
+    };
+    
+    template <typename T>
+    static constexpr type_id_t type_id = IdGen<T>::get_unique_id(); 
+
+    static_assert(type_id<int> == type_id<int>);
+    static_assert(type_id<float> == type_id<float>);
+
 } /* end of namespace detail */
 } /* end of namespace cusvna */
-
