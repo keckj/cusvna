@@ -443,8 +443,9 @@ __host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js..
 template <typename T, type_id_t... Is, type_id_t... Js, type_id_t NewSymbolId, typename ResultType>
 __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out(lhs.b() * rhs.b());
+    out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
     out.template x<out.template symbol_offset<NewSymbolId>()>() = lhs.radius() * rhs.radius();
-    return out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
+    return out;
 }
     
 
@@ -484,33 +485,3 @@ __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js..
 #define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::id<__COUNTER__>>(interval)
 
 #endif /* end of include guard: AA_VARIABLE_CU_IWPK5BME */
-
-
-int main() {
-    using T = float;
-    using cusvna::Interval;
-    const Interval<T> ii(-2,2);
-    auto x = aa_from_interval(ii);
-    auto y = aa_from_interval(ii);
-    auto z = aa_from_interval(ii);
-    std::cout << x << std::endl;
-    std::cout << y << std::endl;
-    std::cout << z << std::endl;
-    x += 1.0f;
-    x *= 2.0f;
-    y -= 1.0f;
-    y /= 2.0f;
-    x += x;
-    y -= y;
-    std::cout << ii << std::endl;
-    std::cout << (+x).radius() << std::endl;
-    std::cout << (-y).radius() << std::endl;
-    std::cout << x.interval() << std::endl;
-    std::cout << x.sign() << std::endl;
-    std::cout << x << std::endl;
-    std::cout << y << std::endl;
-    std::cout << z << std::endl;
-    std::cout << x + y + z << std::endl;
-    std::cout << 2.0f*(x + y + z)/2.0f << std::endl;
-    std::cout << x + y + z + x << std::endl;
-}
