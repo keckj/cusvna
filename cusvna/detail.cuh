@@ -245,9 +245,40 @@ namespace detail {
             >::type
         >::type;
     };
-
+    
     template <typename lhs, typename rhs>
     using merged_t = typename MergedType<lhs, rhs>::type;
+
+        
+    /* compute new symbol type ids */
+    template <typename val, int opcode>
+    static constexpr type_id_t unary_type_id = type_id<cuda::std::tuple<val,integer_sequence<opcode>>>();
+    
+    template <typename lhs, typename rhs, int opcode>
+    static constexpr type_id_t binop_type_id = type_id<cuda::std::tuple<lhs,rhs,integer_sequence<opcode>>>();
+
+
+    /* insert new symbol into an existing AA type */
+    template <typename, type_id_t>
+    struct InsertNewSymbolType {};
+
+    template <template<typename, type_id_t...> class cls, typename T, type_id_t... Is, type_id_t new_symbol>
+    struct InsertNewSymbolType<cls<T,Is...>, new_symbol> {
+        static_assert(!is_in_sequence<new_symbol, Is...>::value, "Symbol is already contained in base type.");
+        using type = typename TypeFromSequence<
+            cls,
+            T,
+            typename merge_type_ids<
+                type_id_sequence<Is...>,
+                type_id_sequence<new_symbol>
+            >::type
+        >::type;
+    };
+    
+    template <typename cls, type_id_t new_symbol>
+    using insert_new_symbol_t = typename InsertNewSymbolType<cls, new_symbol>::type;
+    
+    
 
 } /* end of namespace detail */
 } /* end of namespace cusvna */

@@ -11,7 +11,7 @@
 
 namespace cusvna {
 
-using detail::type_id, detail::type_id_t;
+using detail::type_id_t;
 
 template <typename T, type_id_t... Is>
 class AA {
@@ -77,12 +77,18 @@ class AA {
     protected:
         T m_b;
         cuda::std::array<T,N> m_x;
-        
+       
+    private:
         template <typename Functor, typename... Args, int... Ks> __host__ __device__ void apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) const;
         template <typename Functor, typename... Args, int... Ks> __host__ __device__ void apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>);
         template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args) const;
         template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args);
 };
+
+namespace op {
+    static constexpr int MUL  = 1;
+    static constexpr int DIV  = 2;
+}
 
 
 /* type preserving operators */
@@ -99,12 +105,19 @@ template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator*
 
 template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs);
 
+
 /* type altering operators */
 template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 __host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
 
 template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 __host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+template <typename T, type_id_t... Is, type_id_t... Js, 
+          type_id_t NewSymbolId = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::MUL>,
+          typename ResultType = detail::insert_new_symbol_t<detail::merged_t<AA<T,Is...>, AA<T,Js...>>, NewSymbolId>>
+__host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
 
 /* other operators */
 #ifndef __CUDACC_RTC__
@@ -401,7 +414,16 @@ namespace impl {
         template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
         __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
             constexpr type_id_t idx = out.template idx<K>();
-            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() + rhs.template symbol_magnitude<idx,0>();
+            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() - rhs.template symbol_magnitude<idx,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_multiply_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t idx = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() * rhs.b() + rhs.template symbol_magnitude<idx,0>() * lhs.b();
         }
     };
 }
@@ -416,6 +438,13 @@ template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
 __host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out(lhs.b() - rhs.b());
     return out.template constexpr_apply<impl::outplace_subtract_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() * rhs.b());
+    out.template x<out.template symbol_offset<NewSymbolId>()>() = lhs.radius() * rhs.radius();
+    return out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
 }
     
 
