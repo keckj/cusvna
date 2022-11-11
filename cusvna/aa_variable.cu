@@ -15,7 +15,8 @@ using detail::type_id, detail::type_id_t;
 template <typename T, type_id_t... Is>
 class AA {
     /* Is... represent the unique indices of noise symbols. 
-       Is cannot be sorted because type_id_t does not support comparisson (just equality). */
+       Is cannot be sorted because type_id_t does not support comparison (just equality, but this is enough at compile time). */
+    static_assert(detail::is_set<detail::type_id_sequence<Is...>>::value, "Multiple indices repeating.");
 
     public:
         __host__ __device__ AA(const T& b=T(0));
@@ -27,15 +28,16 @@ class AA {
         explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
 
                                              static constexpr int N = sizeof...(Is);   /* number of active noise symbols 0 <= n <= N. */
-        template <int I> __host__ __device__ static constexpr type_id_t idx();               /* returns Is[I] which represents the index of noise symbol number I. */
+        template <int K> __host__ __device__ static constexpr type_id_t idx();         /* returns Is[I] which [represents] the index of noise symbol number I. */
+        template <int K> __host__ __device__ static           intptr_t  pretty_idx();  /* returns Is[I] - constant which is the pretty index of noise symbol number I. */
         
         /* base coefficient of the affine form */
         __host__ __device__       T& b();        
         __host__ __device__ const T& b() const;
         
         /* x<I> is the magnitude vector of the uncertainty coerresponding to noise symbol number I. */
-        template <int I> __host__ __device__       T& x();
-        template <int I> __host__ __device__ const T& x() const;
+        template <int K> __host__ __device__       T& x();
+        template <int K> __host__ __device__ const T& x() const;
             
         __host__ __device__ T radius() const;             /* sum of absolute symbol magnitudes */
         __host__ __device__ Interval<T> interval() const; /* cast to an interval */
@@ -87,10 +89,17 @@ AA<T,Is...>::AA(const Interval<T>& interval): m_b(interval.midpoint()), m_x{inte
 }
 
 template <typename T, type_id_t... Is>
-template <int I> 
+template <int K> 
 constexpr type_id_t AA<T,Is...>::idx() { 
-    static_assert(I<N); 
-    return cuda::std::get<I>(cuda::std::make_tuple(Is...));
+    static_assert(K<N); 
+    return cuda::std::get<K>(cuda::std::make_tuple(Is...));
+}
+
+template <typename T, type_id_t... Is>
+template <int K> 
+intptr_t AA<T,Is...>::pretty_idx() { 
+    static_assert(K<N); 
+    return intptr_t(AA<T,Is...>::idx<K>()) - intptr_t(detail::id<0>);
 }
 
 template <typename T, type_id_t... Is>
@@ -104,17 +113,17 @@ const T& AA<T,Is...>::b() const {
 }
     
 template <typename T, type_id_t... Is>
-template <int I> 
+template <int K> 
 T& AA<T,Is...>::x() {
-    static_assert(I<N); 
-    return cuda::std::get<I>(m_x);
+    static_assert(K<N); 
+    return cuda::std::get<K>(m_x);
 }
         
 template <typename T, type_id_t... Is>
-template <int I> 
+template <int K> 
 const T& AA<T,Is...>::x() const {
-    static_assert(I<N); 
-    return cuda::std::get<I>(m_x);
+    static_assert(K<N); 
+    return cuda::std::get<K>(m_x);
 }
         
 template <typename T, type_id_t... Is>
@@ -179,13 +188,11 @@ void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
     }
 }
 
-#if 0
 template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out;
     return out;
 }
-#endif
     
 template <typename T, type_id_t... Is>
 T AA<T,Is...>::radius() const {
@@ -289,7 +296,7 @@ AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
             __host__ __device__ void operator()(const AA<T,Is...>& val, std::ostream& os) const {
 #ifndef __CUDA_ARCH__
                 using V = AA<T,Is...>;
-                os << intptr_t(V::template idx<K>()) - intptr_t(cusvna::detail::type_id<cusvna::detail::integer_sequence<0>>) << ": " << val.template x<K>();
+                os << V::template pretty_idx<K>() << ": " << val.template x<K>();
                 if constexpr (K != V::N-1) {
                     os << ", ";
                 }
@@ -313,7 +320,7 @@ AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
 } /* end of namespace cusvna */
 
 
-#define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::type_id<cusvna::detail::integer_sequence<__COUNTER__>>>(interval)
+#define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::id<__COUNTER__>>(interval)
 
 
 int main() {
@@ -322,8 +329,7 @@ int main() {
     const Interval<T> ii(-2,2);
     auto x = aa_from_interval(ii);
     auto y = aa_from_interval(ii);
-    std::cout << x << std::endl;
-    std::cout << y << std::endl;
+    auto z = aa_from_interval(ii);
     x += 1.0f;
     x *= 2.0f;
     y -= 1.0f;
@@ -333,8 +339,10 @@ int main() {
     std::cout << ii << std::endl;
     std::cout << x << std::endl;
     std::cout << y << std::endl;
+    std::cout << z << std::endl;
     std::cout << (+x).radius() << std::endl;
     std::cout << (-y).radius() << std::endl;
     std::cout << x.interval() << std::endl;
     std::cout << x.sign() << std::endl;
+    std::cout << x + y + z << std::endl;
 }
