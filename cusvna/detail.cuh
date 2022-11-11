@@ -13,6 +13,7 @@ namespace detail {
     template <size_t N>
     using make_integer_sequence = cuda::std::make_integer_sequence<int, N>;
    
+    
     /* generate unique type_id from a typename, type_id_t are just equal-comparable so no sorting is possible */
     using type_id_t = void(*)();
 
@@ -37,6 +38,7 @@ namespace detail {
     
     template <type_id_t... Is>
     using type_id_sequence = cuda::std::integer_sequence<type_id_t, Is...>;
+
     
     /* is in sequence */
     template <type_id_t I0, type_id_t... Is>
@@ -52,6 +54,25 @@ namespace detail {
     static_assert(!is_in_sequence<id<42>,id<0>,id<1>,id<2>,id<3>,id<4>>::value, "is_in_sequence error");
     static_assert(!is_in_sequence<id<0>>::value, "is_in_sequence error");
     
+    
+    /* offset in sequence */
+    template <type_id_t, typename, int K=0>
+    struct offset_in_sequence { 
+        static constexpr int value = -1;
+    };
+
+    template <type_id_t I, type_id_t I0, type_id_t... Is, int K>
+    struct offset_in_sequence<I, type_id_sequence<I0,Is...>, K>{
+        static constexpr int value = (std::is_same<type_id_sequence<I>,type_id_sequence<I0>>::value ? K : 
+                                      offset_in_sequence<I,type_id_sequence<Is...>,K+1>::value); 
+    };
+
+    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<0>>>::value == 0, "offset_in_sequence error");
+    static_assert(offset_in_sequence<id<1>,type_id_sequence<id<0>,id<1>>>::value == 1, "offset_in_sequence error");
+    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<1>>>::value == -1, "offset_in_sequence error");
+    static_assert(offset_in_sequence<id<0>,type_id_sequence<>>::value == -1, "offset_in_sequence error");
+    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 2, "offset_in_sequence error");
+    static_assert(offset_in_sequence<id<2>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 1, "offset_in_sequence error");
     
     /* is set */
     template <typename>

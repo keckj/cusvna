@@ -1,4 +1,7 @@
 
+#ifndef AA_VARIABLE_CU_IWPK5BME
+#define AA_VARIABLE_CU_IWPK5BME
+
 #ifndef __CUDACC_RTC__
 #include <iostream>
 #endif
@@ -36,7 +39,16 @@ class AA {
         /* x<K> is the magnitude vector of the uncertainty coerresponding to noise symbol number K. */
         template <int K> __host__ __device__       T& x();
         template <int K> __host__ __device__ const T& x() const;
-            
+        
+        /* has_symbol<I> is true if I represents an existing noise symbol in this form <=> (I is in Is) */
+        template <type_id_t I> __host__ __device__ static constexpr bool has_symbol();
+        
+        /* symbol_offset<I> is the offset of I into Is for an existign symbol */
+        template <type_id_t I> __host__ __device__ static constexpr int symbol_offset();
+        
+        /* get<I,D> returns x<index<I>> for an existing noise symbol else return default value T(D) */
+        template <type_id_t I, int D=0> __host__ __device__ T symbol_magnitude() const;
+        
         __host__ __device__ T radius() const;             /* sum of absolute symbol magnitudes */
         __host__ __device__ Interval<T> interval() const; /* cast to an interval */
         __host__ __device__ Sign sign() const;            /* shortcut for Interval<T>(*this).sign() */
@@ -72,6 +84,7 @@ class AA {
         template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args);
 };
 
+
 /* type preserving operators */
 template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const AA<T,Is...>& rhs);
 template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const T& rhs);
@@ -86,7 +99,14 @@ template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator*
 
 template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs);
 
+/* type altering operators */
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
+__host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
 
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
+__host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+/* other operators */
 #ifndef __CUDACC_RTC__
     template <typename T, type_id_t... Is> 
     __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val);
@@ -142,6 +162,30 @@ const T& AA<T,Is...>::x() const {
     static_assert(K<N); 
     return cuda::std::get<K>(m_x);
 }
+        
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+__host__ __device__ constexpr bool AA<T,Is...>::has_symbol() {
+    return detail::is_in_sequence<I, Is...>::value;
+}
+
+template <typename T, type_id_t... Is>
+template <type_id_t I>
+__host__ __device__ constexpr int AA<T,Is...>::symbol_offset() {
+    return detail::offset_in_sequence<I, detail::type_id_sequence<Is...>>::value;
+}
+
+template <typename T, type_id_t... Is>
+template <type_id_t I, int D>
+__host__ __device__ T AA<T,Is...>::symbol_magnitude() const {
+    if constexpr (has_symbol<I>()) {
+        return x<symbol_offset<I>()>();
+    }
+    else {
+        return T(D);
+    }
+}
+        
         
 template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
@@ -205,12 +249,6 @@ void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
     }
 }
 
-template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
-ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
-    ResultType out;
-    return out;
-}
-    
 template <typename T, type_id_t... Is>
 T AA<T,Is...>::radius() const {
     T r(0);
@@ -348,6 +386,39 @@ __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs) 
     return +lhs /= rhs;
 }
 
+namespace impl {
+    template <int K>
+    struct outplace_add_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t idx = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() + rhs.template symbol_magnitude<idx,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_subtract_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t idx = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() + rhs.template symbol_magnitude<idx,0>();
+        }
+    };
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
+__host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() + rhs.b());
+    return out.template constexpr_apply<impl::outplace_add_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
+__host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() - rhs.b());
+    return out.template constexpr_apply<impl::outplace_subtract_functor>(lhs, rhs);
+}
+    
+
 #ifndef __CUDACC_RTC__
     /* example for apply_constexpr, there is no templated lambdas until c++ 20 so we use a struct */
     namespace impl {
@@ -383,6 +454,8 @@ __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs) 
 
 #define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::id<__COUNTER__>>(interval)
 
+#endif /* end of include guard: AA_VARIABLE_CU_IWPK5BME */
+
 
 int main() {
     using T = float;
@@ -391,6 +464,9 @@ int main() {
     auto x = aa_from_interval(ii);
     auto y = aa_from_interval(ii);
     auto z = aa_from_interval(ii);
+    std::cout << x << std::endl;
+    std::cout << y << std::endl;
+    std::cout << z << std::endl;
     x += 1.0f;
     x *= 2.0f;
     y -= 1.0f;
@@ -398,12 +474,14 @@ int main() {
     x += x;
     y -= y;
     std::cout << ii << std::endl;
-    std::cout << x << std::endl;
-    std::cout << y << std::endl;
-    std::cout << z << std::endl;
     std::cout << (+x).radius() << std::endl;
     std::cout << (-y).radius() << std::endl;
     std::cout << x.interval() << std::endl;
     std::cout << x.sign() << std::endl;
+    std::cout << x << std::endl;
+    std::cout << y << std::endl;
+    std::cout << z << std::endl;
     std::cout << x + y + z << std::endl;
+    std::cout << 2.0f*(x + y + z)/2.0f << std::endl;
+    std::cout << x + y + z + x << std::endl;
 }
