@@ -252,7 +252,7 @@ namespace detail {
         
     /* compute new symbol type ids */
     template <typename val, int opcode>
-    static constexpr type_id_t unary_type_id = type_id<cuda::std::tuple<val,integer_sequence<opcode>>>;
+    static constexpr type_id_t unop_type_id = type_id<cuda::std::tuple<val,integer_sequence<opcode>>>;
     
     template <typename lhs, typename rhs, int opcode>
     static constexpr type_id_t binop_type_id = type_id<cuda::std::tuple<lhs,rhs,integer_sequence<opcode>>>;

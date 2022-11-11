@@ -65,7 +65,7 @@ class AA {
             
         __host__ __device__ AA& operator-=(const AA& other);
         __host__ __device__ AA& operator+=(const AA& other);
-    
+        
         /* apply N times a function with arguments (K, Is[K], x[K], args...) where K=range(N) is not constexpr  */
         template <typename Functor, typename... Args> __host__ __device__       AA& apply(Functor&& f, Args&&... args);
         template <typename Functor, typename... Args> __host__ __device__ const AA& apply(Functor&& f, Args&&... args) const;
@@ -85,9 +85,10 @@ class AA {
         template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args);
 };
 
+
 namespace op {
-    static constexpr int MUL  = 1;
-    static constexpr int DIV  = 2;
+    static constexpr int MUL = 1;
+    static constexpr int RECIPROCAL = 2;
 }
 
 
@@ -117,6 +118,11 @@ template <typename T, type_id_t... Is, type_id_t... Js,
           type_id_t NewSymbolId = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::MUL>,
           typename ResultType = detail::insert_new_symbol_t<detail::merged_t<AA<T,Is...>, AA<T,Js...>>, NewSymbolId>>
 __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::RECIPROCAL>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType reciprocal(const AA<T,Is...>& val);
 
 
 /* other operators */
@@ -445,6 +451,12 @@ __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js..
     ResultType out(lhs.b() * rhs.b());
     out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
     out.template x<out.template symbol_offset<NewSymbolId>()>() = lhs.radius() * rhs.radius();
+    return out;
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType reciprocal(const AA<T,Is...>& val) {
+    ResultType out;
     return out;
 }
     

@@ -38,7 +38,7 @@ int main() {
     assert_equal(1.0+x, 1.0+x_, "1+x");
     assert_equal(2.0-y, 2.0-y_, "2-y");
     assert_equal(3.0*z, 3.0*z_, "3*z");
-
+    
     x += 1.0; x_=x_+1.0; assert_equal(x, x_, "x+=1");
     y -= 2.0; y_=y_-2.0; assert_equal(y, y_, "y-=2");
     z *= 3.0; z_=z_*3.0; assert_equal(z, z_, "z*=3");
@@ -48,8 +48,8 @@ int main() {
     assert_equal(y*y, y_*y_, "y*y");
     assert_equal(x*y, x_*y_, "x*y");
     assert_equal(w*w, w_*w_, "w*w");
-    
-    /*assert_equal(w.reciprocal(), inv(w_), "1/w");*/
+
+    assert_equal(reciprocal(w), inv(w_), "1/w");
     /*assert_equal(2.0/w, 2.0*inv(w_), "2/w");*/
     /*assert_equal(w/w, w_*inv(w_), "w/w");*/
     /*assert_equal(z/w, z_/w_, "z/w");*/
