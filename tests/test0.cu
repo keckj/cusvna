@@ -1,10 +1,7 @@
 /* This test compares outputs between primitives */
 #include "tests/utils.h"
-#include "aa.h" /* libaffa */
-#include "cusvna/aa_variable.cuh"
 
-using T = double;
-using Interval = cusvna::Interval<T>;
+using Interval = cusvna::Interval<double>;
    
 int main() {
     Interval u(-2,2); interval u_(-2,2);

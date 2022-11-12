@@ -13,9 +13,6 @@ kernel_src = f"""
 
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
-using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 8;
-using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
 
 __global__ void func_2d(const T xmin, const T xmax,
@@ -37,14 +34,12 @@ __global__ void func_2d(const T xmin, const T xmax,
     const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
     const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
 
-    G index_generator;
-    const AA x(xi, index_generator);
-    const AA y(yi, index_generator);
-    const AA xy = x*y;
-    const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
+    const auto y = aa_from_interval(yi);
+    const auto x = aa_from_interval(xi);
+    auto xy = x*y;
+    auto z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
 
-    const Interval zi(z);
-    sign[k] = zi.sign();
+    sign[k] = z.sign();
 }}
 """
 

@@ -1,3 +1,5 @@
+#ifndef DETAIL_CUH_6K1DTOM7
+#define DETAIL_CUH_6K1DTOM7
 
 #include <cuda/std/utility>
 #include <cuda/std/type_traits>
@@ -282,3 +284,5 @@ namespace detail {
 
 } /* end of namespace detail */
 } /* end of namespace cusvna */
+
+#endif /* end of include guard: DETAIL_CUH_6K1DTOM7 */

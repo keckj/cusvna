@@ -1,652 +1,643 @@
-#ifndef AA_H_TLKSOS6P
-#define AA_H_TLKSOS6P
+#ifndef AA_CUH_NLBP0A1W
+#define AA_CUH_NLBP0A1W
 
 #ifndef __CUDACC_RTC__
 #include <ostream>
 #endif
 
-#include <cuda/std/functional>
-
-#include "cusvna/interval.cuh"
-#include "cusvna/index.cuh"
+#include <cusvna/detail.cuh>
+#include <cusvna/interval.cuh>
 
 namespace cusvna {
-    
-    template <typename T>
-    static constexpr T pi = T(3.141592653589793238462643383279502884197169399375105820974944);
-    
-    template <typename T, typename I, typename G, I N>
-    class AA {
-        /* Affine Arithmetic with fixed number of active noise symbols:
-         *    Coefficients type T
-         *    Integer type I
-         *    Symbol index generator type G
-         *    Sparse representation with at most N different noise symbols 
-         */
-        public:
-                     __host__ __device__ AA();                                                                        /* default constructor, only to be used for array allocation */
-                     __host__ __device__ AA(const AA<T,I,G,N>& other);                                                /* copy constructor */
-            explicit __host__ __device__ AA(G& index_generator);                                                      /* minimal constructor for working AA */
-            explicit __host__ __device__ AA(G& index_generator, const T& base_coefficient);                           /* base coeff constructor */
-            explicit __host__ __device__ AA(const Interval<T>& interval, G& index_generator);                         /* construct from an interval */
-            explicit __host__ __device__ AA(const AA<T,I,G,N>& base, const T& alpha, const T& zeta, const T& gamma);  /* affine constructor to handle non linearities */
 
-            explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
+using detail::type_id_t;
 
-            __host__ __device__ const T& x0() const;             /* base coefficient x0 */
-            __host__ __device__ const I& n() const;              /* number of active noise symbols 0 <= n <= N. */
-            __host__ __device__ const T* x() const;              /* x is the magnitude vector of the uncertainty coerresponding to noise symbols. */
-            __host__ __device__ const I* idx() const;            /* idx represent the index vector of noise symbols, idx is assumed to be sorted. */
-            __host__ __device__ const T& x(const I& i) const;    /* x(i) is the magnitude of the uncertainty coerresponding to noise symbol idx[i]. */
-            __host__ __device__ const I& idx(const I& i) const;  /* idx(i) represent the index of noise symbol number i, idx is assumed to be sorted. */
-            __host__ __device__ G& index_generator() const;      /* the index generator used by this affine form, assert if m_index_generator is a nullptr */
+template <typename T, type_id_t... Is>
+class AA {
+    /* Is... represent the unique indices of noise symbols.
+       Is cannot be sorted because type_id_t does not support comparison (just equality, but this is enough at compile time). */
+    static_assert(detail::is_set<detail::type_id_sequence<Is...>>::value, "Multiple indices repeating.");
 
-            __host__ __device__ T& x0();
-            __host__ __device__ I& n();
-            __host__ __device__ T* x();
-            __host__ __device__ I* idx();
-            __host__ __device__ T& x(const I& i);
-            __host__ __device__ I& idx(const I& i);
+    public:
+        static constexpr int N = sizeof...(Is);  /* number of active noise symbols N >= 0. */
 
-            __host__ __device__ AA<T,I,G,N>& append_symbol(const I& symbol_index, const T& magnitude);
-            __host__ __device__ AA<T,I,G,N>& append_new_symbol(const T& magnitude);
+        __host__ __device__ AA(const T& b=T(0));
+        __host__ __device__ AA(const AA& other);
+        __host__ __device__ AA(const Interval<T>& interval);
+        __host__ __device__ AA& operator=(const AA& other);
 
-            __host__ __device__ T radius() const; /* sum of absolute symbol magnitudes */
-            __host__ __device__ Interval<T> interval() const; /* cast to an interval */
-            __host__ __device__ Sign sign() const; /* shortcut for Interval<T>(*this).sign() */
-            __host__ __device__ void print() const;
-            
-            __host__ __device__ AA<T,I,G,N>& operator=(const AA<T,I,G,N>& other);
-            
-            __host__ __device__ const I& operator()(const I& i) const;  /* alias of idx(i) */
-            __host__ __device__ const T& operator[](const I& i) const;  /* alias of x(i)   */
+        explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
 
-            __host__ __device__ I& operator()(const I& i);
-            __host__ __device__ T& operator[](const I& i);
-
-            __host__ __device__ AA<T,I,G,N> operator-() const;
-            __host__ __device__ AA<T,I,G,N> operator+() const;
-            __host__ __device__ AA<T,I,G,N> reciprocal() const;  /* multiplicative inverse */
-
-            __host__ __device__ AA<T,I,G,N>& operator-=(const T& other);
-            __host__ __device__ AA<T,I,G,N>& operator+=(const T& other);
-            __host__ __device__ AA<T,I,G,N>& operator*=(const T& other);
-            __host__ __device__ AA<T,I,G,N>& operator/=(const T& other);
-
-            __host__ __device__ AA<T,I,G,N>& operator-=(const AA<T,I,G,N>& other);
-            __host__ __device__ AA<T,I,G,N>& operator+=(const AA<T,I,G,N>& other);
-            __host__ __device__ AA<T,I,G,N>& operator*=(const AA<T,I,G,N>& other);
-            __host__ __device__ AA<T,I,G,N>& operator/=(const AA<T,I,G,N>& other);
-        private:
-            T m_x0;
-            T m_coeffs[N]; 
-            I m_n;
-            I m_indices[N];
-            G* m_index_generator; /* ptr to symbol index generator, no static members in device code */
-    };
+        template <int K> __host__ __device__ static constexpr type_id_t idx();         /* returns Is[K] which represents] the index of noise symbol number K. */
+        template <int K> __host__ __device__ static           intptr_t  pretty_idx();  /* returns Is[K] - constant which is the pretty index of noise symbol number K. */
         
-    /* operators */
-    template <typename T, typename I, typename G, I N, typename F>
-    __host__ __device__ AA<T,I,G,N>& inplace_unary_op(AA<T,I,G,N>& input, F&& op);
-    
-    template <typename T, typename I, typename G, I N, typename F>
-    __host__ __device__ AA<T,I,G,N> binary_op(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs, F&& op, const T& identity);
+        /* base coefficient of the affine form */
+        __host__ __device__       T& b();        
+        __host__ __device__ const T& b() const;
+        
+        /* x<K> is the magnitude of the uncertainty corresponding to Kth noise symbol. */
+        template <int K> __host__ __device__       T& x();
+        template <int K> __host__ __device__ const T& x() const;
+        
+        /* x<I> is the magnitude of the uncertainty corresponding to noise symbol index I. */
+        template <type_id_t I> __host__ __device__       T& x();
+        template <type_id_t I> __host__ __device__ const T& x() const;
+        
+        /* has_symbol<I> is true if I represents an existing noise symbol in this affine arithmetic form */
+        template <type_id_t I> __host__ __device__ static constexpr bool has_symbol();
+        
+        /* symbol_offset<I> is the offset K of I into Is for an existing symbol */
+        template <type_id_t I> __host__ __device__ static constexpr int symbol_offset();
+        
+        /* get<I,D> returns x<I> for an existing noise symbol else return default value T(D) */
+        template <type_id_t I, int D=0> __host__ __device__ T symbol_magnitude() const;
+       
+        /* utility functions */
+        __host__ __device__ T radius() const;             /* sum of absolute symbol magnitudes */
+        __host__ __device__ Interval<T> interval() const; /* cast to an interval */
+        __host__ __device__ Sign sign() const;            /* shortcut for Interval<T>(*this).sign() */
+        __host__ __device__ void print() const;           /* alternative to std::cout to print on device */
+            
+        /* type preserving operators */
+        __host__ __device__ AA operator-() const;
+        __host__ __device__ AA operator+() const;
+        
+        __host__ __device__ AA& operator-=(const T& other);
+        __host__ __device__ AA& operator+=(const T& other);
+        __host__ __device__ AA& operator*=(const T& other);
+        __host__ __device__ AA& operator/=(const T& other);
+            
+        __host__ __device__ AA& operator-=(const AA& other);
+        __host__ __device__ AA& operator+=(const AA& other);
+        
+        /* apply N times a function with arguments (K, Is[K], x[K], args...) where K=range(N) is not constexpr  */
+        template <typename Functor, typename... Args> __host__ __device__       AA& apply(Functor&& f, Args&&... args);
+        template <typename Functor, typename... Args> __host__ __device__ const AA& apply(Functor&& f, Args&&... args) const;
 
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator+(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator+(const AA<T,I,G,N>& lhs, const T& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator+(const T& lhs, const AA<T,I,G,N>& rhs);
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator-(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator-(const AA<T,I,G,N>& lhs, const T& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator-(const T& lhs, const AA<T,I,G,N>& rhs);
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const AA<T,I,G,N>& lhs, const T& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator*(const T& lhs, const AA<T,I,G,N>& rhs);
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator/(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator/(const AA<T,I,G,N>& lhs, const T& rhs);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ operator/(const T& lhs, const AA<T,I,G,N>& rhs);
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ sqrt(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ exp(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ log(const AA<T,I,G,N>& val);
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ sinh(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ cosh(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ tanh(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ cotanh(const AA<T,I,G,N>& val);
+        /* apply an integer templated functor on constexpr K=range(N) with arguments (*this, args...) */
+        template <template <int> class Functor, typename... Args> __host__ __device__       AA& constexpr_apply(Args&&... args);
+        template <template <int> class Functor, typename... Args> __host__ __device__ const AA& constexpr_apply(Args&&... args) const;
+        
+    protected:
+        T m_b;
+        cuda::std::array<T,N> m_x;
+       
+    private:
+        template <typename Functor, typename... Args, int... Ks> __host__ __device__ void apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) const;
+        template <typename Functor, typename... Args, int... Ks> __host__ __device__ void apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>);
+        template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args) const;
+        template <template <int> class Functor, int K, typename... Args> __host__ __device__ void constexpr_apply_impl(Args&&... args);
+};
 
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ sin(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ cos(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ tan(const AA<T,I,G,N>& val);
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N> __host__ __device__ cotan(const AA<T,I,G,N>& val);
-    
+
+namespace op {
+    static constexpr int MUL = 1;
+    static constexpr int RECIPROCAL = 2;
+    static constexpr int SQRT = 3;
+    static constexpr int EXP = 4;
+    static constexpr int LOG = 5;
+}
+
+
+/* type preserving operators */
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const AA<T,Is...>& rhs);
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const T& rhs);
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator+(const T& lhs, const AA<T,Is...>& rhs);
+
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator-(const AA<T,Is...>& lhs, const AA<T,Is...>& rhs);
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator-(const AA<T,Is...>& lhs, const T& rhs);
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator-(const T& lhs, const AA<T,Is...>& rhs);
+
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator*(const AA<T,Is...>& lhs, const T& rhs);
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator*(const T& lhs, const AA<T,Is...>& rhs);
+
+template <typename T, type_id_t... Is> __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs);
+
+
+/* type altering operators */
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
+__host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
+__host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+template <typename T, type_id_t... Is, type_id_t... Js,
+          type_id_t NewSymbolId = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::MUL>,
+          typename ResultType = detail::insert_new_symbol_t<detail::merged_t<AA<T,Is...>, AA<T,Js...>>, NewSymbolId>>
+__host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+template <typename T, type_id_t... Is>
+__host__ __device__ auto operator/(const T& lhs, const AA<T,Is...>& rhs);
+
+template <typename T, type_id_t... Is, type_id_t... Js>
+__host__ __device__ auto operator/(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+
+/* functions that add a introduce a new error symbol */
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::RECIPROCAL>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType reciprocal(const AA<T,Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::SQRT>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType sqrt(const AA<T, Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::EXP>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType exp(const AA<T, Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::LOG>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType log(const AA<T, Is...>& val);
+
+
+/* other operators */
 #ifndef __CUDACC_RTC__
-    template <typename T, typename I, typename G, I N> __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a);
+    template <typename T, type_id_t... Is> 
+    __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val);
 #endif
-    
 
-    /* implementation */   
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA() : 
-        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(nullptr)  {
-        static_assert(N>=0, "N<0");
-    }
+    
+/* implementation */   
+template <typename T, type_id_t... Is>
+AA<T,Is...>::AA(const T& b): m_b(b), m_x{} {}
 
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA(G& index_generator) : 
-        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator)  {
-        static_assert(N>=0, "N<0");
-    }
+template <typename T, type_id_t... Is>
+AA<T,Is...>::AA(const AA& other): m_b(other.m_b), m_x(other.m_x) {}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...>::AA(const Interval<T>& interval): m_b(interval.midpoint()), m_x{interval.radius()} {
+    static_assert(N==1, "Can only construct from interval when there is only one noise symbol.");
+}
+
+template <typename T, type_id_t... Is>
+template <int K> 
+constexpr type_id_t AA<T,Is...>::idx() { 
+    static_assert(K<N); 
+    return cuda::std::get<K>(cuda::std::make_tuple(Is...));
+}
+
+template <typename T, type_id_t... Is>
+template <int K> 
+intptr_t AA<T,Is...>::pretty_idx() { 
+    static_assert(K<N); 
+    return intptr_t(AA<T,Is...>::idx<K>()) - intptr_t(detail::id<0>);
+}
+
+template <typename T, type_id_t... Is>
+T& AA<T,Is...>::b() {
+    return m_b;
+}
+        
+template <typename T, type_id_t... Is>
+const T& AA<T,Is...>::b() const {
+    return m_b;
+}
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA(G& index_generator, const T& base_coefficient) : 
-        m_x0(base_coefficient), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator)  {
-        static_assert(N>=0, "N<0");
+template <typename T, type_id_t... Is>
+template <int K> 
+T& AA<T,Is...>::x() {
+    static_assert(K<N); 
+    return cuda::std::get<K>(m_x);
+}
+        
+template <typename T, type_id_t... Is>
+template <int K> 
+const T& AA<T,Is...>::x() const {
+    static_assert(K<N); 
+    return cuda::std::get<K>(m_x);
+}
+
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+T& AA<T,Is...>::x() {
+    static_assert(has_symbol<I>()); 
+    return x<symbol_offset<I>()>();
+}
+        
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+const T& AA<T,Is...>::x() const {
+    static_assert(has_symbol<I>()); 
+    return x<symbol_offset<I>()>();
+}
+        
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+__host__ __device__ constexpr bool AA<T,Is...>::has_symbol() {
+    return detail::is_in_sequence<I, Is...>::value;
+}
+
+template <typename T, type_id_t... Is>
+template <type_id_t I>
+__host__ __device__ constexpr int AA<T,Is...>::symbol_offset() {
+    return detail::offset_in_sequence<I, detail::type_id_sequence<Is...>>::value;
+}
+
+template <typename T, type_id_t... Is>
+template <type_id_t I, int D>
+__host__ __device__ T AA<T,Is...>::symbol_magnitude() const {
+    if constexpr (has_symbol<I>()) {
+        return x<I>();
     }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA(const Interval<T>& interval, G& index_generator):
-        m_x0(interval.midpoint()), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&index_generator) {
-        static_assert(N>=0, "N<0");
-        this->append_new_symbol(interval.radius());
+    else {
+        return T(D);
     }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& other) : 
-        m_x0(0), m_coeffs{}, m_n(0), m_indices{}, m_index_generator(&other.index_generator()) {
-        static_assert(N>=0, "N<0");
-        *this = other;
+}
+        
+template <typename T, type_id_t... Is>
+template <typename Functor, typename... Args> 
+AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) {
+    this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
+    return *this;
+}
+
+template <typename T, type_id_t... Is>
+template <typename Functor, typename... Args> 
+const AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) const {
+    this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
+    return *this;
+}
+
+template <typename T, type_id_t... Is>
+template <typename Functor, typename... Args, int... Ks> 
+void AA<T,Is...>::apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) {
+    (f(Ks, this->idx<Ks>(), this->x<Ks>(), args...), ...);
+}
+
+template <typename T, type_id_t... Is>
+template <typename Functor, typename... Args, int... Ks> 
+void AA<T,Is...>::apply_impl(Functor&& f, Args&&... args, detail::integer_sequence<Ks...>) const {
+    (f(Ks, this->idx<Ks>(), this->x<Ks>(), args...), ...);
+}
+        
+template <typename T, type_id_t... Is>
+template <template <int> class Functor, typename... Args>
+const AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) const {
+    if constexpr (N > 0) {
+        this->constexpr_apply_impl<Functor,0,Args...>(std::forward<Args>(args)...);
     }
+    return *this;
+}
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::AA(const AA<T,I,G,N>& base, const T& alpha, const T& zeta, const T& delta) : 
-        m_coeffs{}, m_indices{}, m_index_generator(&base.index_generator()) {
-        static_assert(N>=0, "N<0");
-        this->x0() = alpha * base.x0() + zeta;
-        this->n() = base.n();
-        for (I i = 0; i < base.n(); ++i) {
-            this->idx(i) = base.idx(i);
-            this->x(i) = alpha * base.x(i);
+template <typename T, type_id_t... Is>
+template <template <int> class Functor, int K, typename... Args>
+void AA<T,Is...>::constexpr_apply_impl(Args&&... args) const {
+    Functor<K>()(*this, args...);
+    if constexpr (K+1<N) {
+        this->constexpr_apply_impl<Functor,K+1,Args...>(std::forward<Args>(args)...);
+    }
+}
+
+template <typename T, type_id_t... Is>
+template <template <int> class Functor, typename... Args>
+AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) {
+    if constexpr (N > 0) {
+        this->constexpr_apply_impl<Functor,0,Args...>(std::forward<Args>(args)...);
+    }
+    return *this;
+}
+    
+template <typename T, type_id_t... Is>
+template <template <int> class Functor, int K, typename... Args>
+void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
+    Functor<K>()(*this, args...);
+    if constexpr (K+1<N) {
+        this->constexpr_apply_impl<Functor,K+1,Args...>(std::forward<Args>(args)...);
+    }
+}
+
+template <typename T, type_id_t... Is>
+T AA<T,Is...>::radius() const {
+    T r(0);
+    this->apply([&](int k, type_id_t i, const T& xi) { r += ::abs(xi); });
+    return r;
+};
+    
+template <typename T, type_id_t... Is>
+AA<T,Is...>::operator Interval<T>() const {
+    const T c = this->b();
+    const T r = this->radius();
+    return Interval<T>(c-r, c+r);
+}
+    
+template <typename T, type_id_t... Is>
+Interval<T> AA<T,Is...>::interval() const {
+    return Interval<T>(*this);
+};
+
+template <typename T, type_id_t... Is>
+Sign AA<T,Is...>::sign() const {
+    return this->interval().sign();
+};
+        
+template <typename T, type_id_t... Is>
+AA<T,Is...> AA<T,Is...>::operator+() const {
+    AA<T,Is...> out(*this);
+    out.b() = +out.b();
+    return out.apply([](int k, type_id_t i, T& xi) { xi = +xi; });
+}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...> AA<T,Is...>::operator-() const {
+    AA<T,Is...> out(*this);
+    out.b() = -out.b();
+    return out.apply([](int k, type_id_t i, T& xi) { xi = -xi; });
+}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator+=(const T& other)  {
+    this->b() += other;
+    return *this;
+}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator-=(const T& other)  {
+    this->b() -= other;
+    return *this;
+}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator*=(const T& other)  {
+    this->b() *= other;
+    return this->apply([&](int k, type_id_t i, T& xi) { xi *= other; });
+}
+
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator/=(const T& other)  {
+    this->b() /= other;
+    return this->apply([&](int k, type_id_t i, T& xi) { xi /= other; });
+}
+
+namespace impl {
+    template <int K>
+    struct inplace_add_functor {
+        template <typename T, type_id_t... Is>
+        __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
+            lhs.template x<K>() += rhs.template x<K>(); 
         }
-        this->append_new_symbol(delta);
-    }
-
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator=(const AA<T,I,G,N>& other) {
-        if (this != &other) {
-            this->x0() = other.x0();
-            this->n() = other.n();
-            for (I i = 0; i < other.n(); ++i) {
-                this->idx(i) = other.idx(i);
-                this->x(i) = other.x(i);
+    };
+    
+    template <int K>
+    struct inplace_subtract_functor {
+        template <typename T, type_id_t... Is>
+        __host__ __device__ void operator()(AA<T,Is...>& lhs, const AA<T,Is...>& rhs) const {
+            lhs.template x<K>() -= rhs.template x<K>(); 
+        }
+    };
+    
+    template <int K>
+    struct outplace_add_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<I,0>() + rhs.template symbol_magnitude<I,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_subtract_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<I,0>() - rhs.template symbol_magnitude<I,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_multiply_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            if constexpr (lhs.template has_symbol<I>() || rhs.template has_symbol<I>()) {
+                out.template x<I>() = lhs.template symbol_magnitude<I,0>() * rhs.b() + rhs.template symbol_magnitude<I,0>() * lhs.b();
+            }
+            else {
+                out.template x<I>() = lhs.radius() * rhs.radius();
             }
         }
-        return *this;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>::operator Interval<T>() const {
-        const T c = this->x0();
-        const T r = this->radius();
-        return Interval<T>(c-r, c+r);
-    }
-
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ G& AA<T,I,G,N>::index_generator() const {
-        /* m_index_generator is nullptr if and only if index_generator is used with 
-           the default constructor. Default constructor should only be used for allocation */
-        assert(m_index_generator != nullptr);
-        return *this->m_index_generator;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ T& AA<T,I,G,N>::x0() {
-        return m_x0;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ I& AA<T,I,G,N>::n() {
-        return m_n;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ T* AA<T,I,G,N>::x() {
-        return &m_coeffs;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ I* AA<T,I,G,N>::idx() {
-        return &m_indices;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ T& AA<T,I,G,N>::x(const I& i) {
-        assert(i<this->n());
-        return m_coeffs[i];
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ I& AA<T,I,G,N>::idx(const I& i) {
-        assert(i<this->n());
-        return m_indices[i];
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ I& AA<T,I,G,N>::operator()(const I& i) {
-        return this->idx(i);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ T& AA<T,I,G,N>::operator[](const I& i) {
-        return this->x(i);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const T& AA<T,I,G,N>::x0() const {
-        return m_x0;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const I& AA<T,I,G,N>::n() const {
-        return m_n;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const T* AA<T,I,G,N>::x() const {
-        return &m_coeffs;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const I* AA<T,I,G,N>::idx() const {
-        return &m_indices;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const T& AA<T,I,G,N>::x(const I& i) const {
-        assert(i<this->n());
-        return m_coeffs[i];
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const I& AA<T,I,G,N>::idx(const I& i) const {
-        assert(i<this->n());
-        return m_indices[i];
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const I& AA<T,I,G,N>::operator()(const I& i) const {
-        return this->idx(i);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ const T& AA<T,I,G,N>::operator[](const I& i) const {
-        return this->x(i);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> AA<T,I,G,N>::operator+() const {
-        return AA<T,I,G,N>(*this);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> AA<T,I,G,N>::operator-() const {
-        AA<T,I,G,N> out(*this);
-        inplace_unary_op(out, [](T& a){ a = -a; });
-        return out;
-    }
-            
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::append_symbol(const I& symbol_index, const T& magnitude) {
-        if (magnitude != T(0)) {
-            I i = this->n();
-            assert(i < N);
-            assert(i==0 || this->idx(i-1) < symbol_index);
-            ++this->n();
-            this->idx(i) = symbol_index;
-            this->x(i) = magnitude;
-        }
-        return *this;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::append_new_symbol(const T& magnitude) {
-        if (magnitude != T(0)) {
-            I symbol_index = this->index_generator()();
-            I i = this->n();
-            assert(i < N);
-            assert(i==0 || this->idx(i-1) < symbol_index);
-            ++this->n();
-            this->idx(i) = symbol_index;
-            this->x(i) = magnitude;
-        }
-        return *this;
-    }
-            
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ T AA<T,I,G,N>::radius() const {
-        T r(0);
-        for (I i = 0; i < this->n(); ++i) {
-            r += abs(this->x(i));
-        }
-        return r;
     };
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ Interval<T> AA<T,I,G,N>::interval() const {
-        return Interval<T>(*this);
+    template <int K>
+    struct affine_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& base, 
+                const T& alpha, const T& zeta, const T& delta) const {
+            constexpr type_id_t I = out.template idx<K>();
+            if constexpr (base.template has_symbol<I>()) {
+                out.template x<I>() = alpha * base.template x<I>();
+            }
+            else {
+                out.b() = alpha * base.b() + zeta;
+                out.template x<I>() = delta;
+            }
+        }
     };
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ Sign AA<T,I,G,N>::sign() const {
-        return this->interval().sign();
-    };
-    
-    /* operators */
-    template <typename T, typename I, typename G, I N, typename F>
-    __host__ __device__ AA<T,I,G,N>& inplace_unary_op(AA<T,I,G,N>& input, F&& op) {
-        op(input.x0());
-        for (I i = 0; i < input.n(); ++i) {
-            op(input.x(i));
-        }
-        return input;
-    }
 
-    template <typename T, typename I, typename G, I N, typename F>
-    __host__ __device__ AA<T,I,G,N> binary_op(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs, F&& op, const T& identity) {
-        AA<T,I,G,N> out(lhs.index_generator());
-        out.x0() = op(lhs.x0(), rhs.x0());
+}
 
-        const I lhs_n(lhs.n()), rhs_n(rhs.n());
-        I lhs_i(0), rhs_i(0);
-        while(lhs_i < lhs_n || rhs_i < rhs_n) {
-            const I lhs_idx(lhs_i >= lhs_n ? G::last_symbol_index : lhs(lhs_i));
-            const I rhs_idx(rhs_i >= rhs_n ? G::last_symbol_index : rhs(rhs_i));
-            const bool le = lhs_idx <= rhs_idx;
-            const bool ge = lhs_idx >= rhs_idx;
-            out.append_symbol( (le ? lhs_idx : rhs_idx), op((le ? lhs[lhs_i] : identity), (ge ? rhs[rhs_i] : identity)));
-            lhs_i += le;
-            rhs_i += ge;
-        }
-        return out;
-    }
-        
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator+=(const AA<T,Is...>& other)  {
+    this->b() += other.b();
+    return this->constexpr_apply<impl::inplace_add_functor>(other);
+}
 
-    /*  OPERATOR +  */
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator+(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        return binary_op(lhs, rhs, [](const T& a, const T& b){ return a + b; }, T(0));
-    }
+template <typename T, type_id_t... Is>
+AA<T,Is...>& AA<T,Is...>::operator-=(const AA<T,Is...>& other)  {
+    this->b() -= other.b();
+    return this->constexpr_apply<impl::inplace_subtract_functor>(other);
+}
+    
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const AA<T,Is...>& rhs) {
+    return +lhs += rhs;
+}
 
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator+=(const T& other) {
-        this->x0() += other;
-        return *this;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator+=(const AA<T,I,G,N>& other) {
-        return *this = *this + other;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator+(const AA<T,I,G,N>& lhs, const T& rhs) {
-        return AA<T,I,G,N>(lhs) += rhs;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator+(const T& lhs, const AA<T,I,G,N>& rhs) {
-        return AA<T,I,G,N>(rhs) += lhs;
-    }
-    
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator+(const AA<T,Is...>& lhs, const T& rhs) {
+    return +lhs += rhs;
+}
 
-    /*  OPERATOR -  */
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator-(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        return binary_op(lhs, rhs, [](const T& a, const T& b){ return a - b; }, T(0));
-    }
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator+(const T& lhs, const AA<T,Is...>& rhs) {
+    return +rhs += lhs;
+}
 
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator-=(const T& other) {
-        this->x0() -= other;
-        return *this;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator-=(const AA<T,I,G,N>& other) {
-        return *this = *this - other;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator-(const AA<T,I,G,N>& lhs, const T& rhs) {
-        return +lhs -= rhs;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator-(const T& lhs, const AA<T,I,G,N>& rhs) {
-        return -rhs += lhs;
-    }
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator-(const AA<T,Is...>& lhs, const AA<T,Is...>& rhs) {
+    return +lhs -= rhs;
+}
 
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator-(const AA<T,Is...>& lhs, const T& rhs) {
+    return +lhs -= rhs;
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator-(const T& lhs, const AA<T,Is...>& rhs) {
+    return -rhs += lhs;
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator*(const AA<T,Is...>& lhs, const T& rhs) {
+    return +lhs *= rhs;
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator*(const T& lhs, const AA<T,Is...>& rhs) {
+    return +rhs *= lhs;
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs) {
+    return +lhs /= rhs;
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
+__host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() + rhs.b());
+    return out.template constexpr_apply<impl::outplace_add_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
+__host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() - rhs.b());
+    return out.template constexpr_apply<impl::outplace_subtract_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    ResultType out(lhs.b() * rhs.b());
+    return out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ auto operator/(const T& lhs, const AA<T,Is...>& rhs) {
+    return lhs * reciprocal(rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js>
+__host__ __device__ auto operator/(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    return lhs * reciprocal(rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType reciprocal(const AA<T,Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.12 */
+    ResultType out;
     
-    /*  OPERATOR *  */
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        const T lhs_x0(lhs.x0()), rhs_x0(rhs.x0());
-        const I lhs_n(lhs.n()), rhs_n(rhs.n());
-        AA<T,I,G,N> out(lhs.index_generator(), lhs_x0 * rhs_x0);
-        I lhs_i(0), rhs_i(0);
-        while(lhs_i < lhs_n || rhs_i < rhs_n) {
-            const I lhs_idx(lhs_i >= lhs_n ? G::last_symbol_index : lhs(lhs_i));
-            const I rhs_idx(rhs_i >= rhs_n ? G::last_symbol_index : rhs(rhs_i));
-            const bool le = lhs_idx <= rhs_idx;
-            const bool ge = lhs_idx >= rhs_idx;
-            out.append_symbol( (le ? lhs_idx : rhs_idx), 
-                    (le ? lhs[lhs_i] : T(0)) * rhs_x0
-                  + (ge ? rhs[rhs_i] : T(0)) * lhs_x0);
-            lhs_i += le;
-            rhs_i += ge;
-        }
-        out.append_new_symbol(lhs.radius() * rhs.radius());
+    Interval<T> interval(val);
+    if (interval.a <= T(0) && interval.b >= T(0)) {
+        out.template x<NewSymbolId>() = cuda::std::numeric_limits<T>::infinity();
         return out;
     }
 
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator*=(const T& other) {
-        return inplace_unary_op(*this, [&](T& x){ x *= other; });
-    }
+    const T fa = ::fabs(interval.a);
+    const T fb = ::fabs(interval.b);
+    const T a = min(fa, fb);
+    const T b = max(fa, fb);
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator*=(const AA<T,I,G,N>& other) {
-        return *this = *this * other;
-    }
+    const T alpha = -T(1)/(b*b);
+    const T dmin = T(1)/a - alpha*a;
+    const T dmax = T(2)/b; // - alpha*b;
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator*(const AA<T,I,G,N>& lhs, const T& rhs) {
-        return +lhs *= rhs;
-    }
+    const T zeta = (interval.a < T(0) ? T(-1) : T(1)) * (dmin + dmax)/T(2);
+    const T delta = (dmax - dmin)/T(2);
+
+    return out.template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType sqrt(const AA<T, Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.9.1 */
+
+    Interval<T> interval(val);
+    const T a = max(interval.a, T(0));  /* we assume a is always positive */
+    const T b = max(interval.b, T(0));  /* we assume b is always positive */
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator*(const T& lhs, const AA<T,I,G,N>& rhs) {
-        return +rhs *= lhs;
-    }
+    const T t = ::sqrt(a) + ::sqrt(b);
+    const T alpha = T(1)/t;
+    const T zeta = t/T(8) + ::sqrt(a*b)/(T(2)*t);
+    const T delta = (a+b-T(2)*::sqrt(a*b)) / (T(8)*t);
+
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType exp(const AA<T, Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.12 */
+
+    Interval<T> interval(val);
+    const T a = interval.a;
+    const T b = interval.b;
+
+    const T ea = ::exp(a);
+    const T eb = ::exp(b);
+    const T alpha = (eb - ea)/(b - a);
     
+    const T zeta  = alpha * (T(1) - ::log(alpha));
+    const T delta = (alpha * (::log(alpha) - T(1) - a) + ea)/T(2);
 
-    /*  OPERATOR /  */
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator/(const AA<T,I,G,N>& lhs, const AA<T,I,G,N>& rhs) {
-        return lhs * rhs.reciprocal();
-    }
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
 
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator/=(const T& other) {
-        return inplace_unary_op(*this, [&](T& x){ x /= other; });
-    }
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType log(const AA<T, Is...>& val) {
+    Interval<T> interval(val);
+    const T a = interval.a;
+    const T b = interval.b;
+
+    const T la = ::log(a);
+    const T lb = ::log(b);
+    const T alpha = (lb - la)/(b - a);
+
+    const T xs = T(1)/alpha;
+    const T ys = alpha * (xs - a) + la;
     
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N>& AA<T,I,G,N>::operator/=(const AA<T,I,G,N>& other) {
-        return *this = *this / other;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator/(const AA<T,I,G,N>& lhs, const T& rhs) {
-        return +lhs *= T(1)/rhs;
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ AA<T,I,G,N> operator/(const T& lhs, const AA<T,I,G,N>& rhs) {
-        return lhs * rhs.reciprocal();
-    }
-    
-    /* RECIPROCAL */
-    template <typename T, typename I, typename G, I N>
-    AA<T,I,G,N> __host__ __device__ AA<T,I,G,N>::reciprocal() const {
-        /* Self-Validated Numerical Methods and Applications - section 3.12 */
+    const T zeta =  -alpha*xs + (::log(xs)+ys)/T(2);
+    const T delta = (::log(xs) - ys)/T(2);
 
-        Interval<T> interval(*this);
-        if (interval.a <= T(0) && interval.b >= T(0)) {
-            return AA<T,I,G,N>(this->index_generator(), cuda::std::numeric_limits<T>::infinity());
-        }
-
-        const T fa = ::fabs(interval.a);
-        const T fb = ::fabs(interval.b);
-        const T a = min(fa, fb);
-        const T b = max(fa, fb);
-        
-        const T alpha = -T(1)/(b*b);
-        const T dmin = T(1)/a - alpha*a;
-        const T dmax = T(2)/b; // - alpha*b;
-        
-        const T zeta = (interval.a < T(0) ? T(-1) : T(1)) * (dmin + dmax)/T(2);
-        const T delta = (dmax - dmin)/T(2);
-        
-        return AA<T,I,G,N>(*this, alpha, zeta, delta);
-    }
-
-    
-    /* SQRT */
-    template <typename T, typename I, typename G, I N>
-    AA<T,I,G,N> __host__ __device__ sqrt(const AA<T,I,G,N>& val) {
-        /* Self-Validated Numerical Methods and Applications - section 3.9.1 */
-
-        Interval<T> interval(val);
-        const T a = max(interval.a, T(0));  /* we assume a is always positive */
-        const T b = max(interval.b, T(0));  /* we assume b is always positive */
-        
-        const T t = ::sqrt(a) + ::sqrt(b);
-        const T alpha = T(1)/t;
-        const T zeta = t/T(8) + ::sqrt(a*b)/(T(2)*t);
-        const T delta = (a+b-T(2)*::sqrt(a*b)) / (T(8)*t);
-
-        return AA<T,I,G,N>(val, alpha, zeta, delta);
-    }
-
-    
-    /* EXP */
-    template <typename T, typename I, typename G, I N>
-    AA<T,I,G,N> __host__ __device__ exp(const AA<T,I,G,N>& val) {
-        /* Self-Validated Numerical Methods and Applications - section 3.12 */
-
-        Interval<T> interval(val);
-        const T a = interval.a;
-        const T b = interval.b;
-
-        const T ea = ::exp(a);
-        const T eb = ::exp(b);
-        const T alpha = (eb - ea)/(b - a);
-        
-        const T zeta  = alpha * (T(1) - ::log(alpha));
-        const T delta = (alpha * (::log(alpha) - T(1) - a) + ea)/T(2);
-
-        return AA<T,I,G,N>(val, alpha, zeta, delta);
-    }
-
-    
-    /* LOG */
-    template <typename T, typename I, typename G, I N>
-    AA<T,I,G,N> __host__ __device__ log(const AA<T,I,G,N>& val) {
-        Interval<T> interval(val);
-        const T a = interval.a;
-        const T b = interval.b;
-
-        const T la = ::log(a);
-        const T lb = ::log(b);
-        const T alpha = (lb - la)/(b - a);
-
-        const T xs = T(1)/alpha;
-        const T ys = alpha * (xs - a) + la;
-        
-        const T zeta =  -alpha*xs + (::log(xs)+ys)/T(2);
-        const T delta = (::log(xs) - ys)/T(2);
-
-        return AA<T,I,G,N>(val, alpha, zeta, delta);
-    }
-
-    /* HYPERBOLIC FUNCTIONS */
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ sinh(const AA<T,I,G,N>& val) {
-        return (exp(val) - exp(-val))/T(2);
-    }
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ cosh(const AA<T,I,G,N>& val) {
-        return (exp(val) + exp(-val))/T(2);
-    }
-
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ tanh(const AA<T,I,G,N>& val) {
-        return sinh(val) / cosh(val);
-    }
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ cotanh(const AA<T,I,G,N>& val) {
-        return cosh(val) / sinh(val);
-    }
-    
-    /* TRIGONOMETRIC FUNCTIONS */
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ sin(const AA<T,I,G,N>& val) {
-        assert(false);
-    }
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ cos(const AA<T,I,G,N>& val) {
-        return sin(val + pi<T>/T(2));
-    }
-
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ tan(const AA<T,I,G,N>& val) {
-        return sin(val) / cos(val);
-    }
-    
-    template <typename T, typename I, typename G, I N> AA<T,I,G,N>
-    __host__ __device__ cotan(const AA<T,I,G,N>& val) {
-        return cos(val) / sin(val);
-    }
-    
-    template <typename T, typename I, typename G, I N>
-    __host__ __device__ void AA<T,I,G,N>::print() const {
-        printf("AA(b=%f, x=[", float(this->x0()));
-        for (I i = 0; i < this->n(); ++i) {
-            printf("%i: %f", int(this->idx(i)), float(this->x(i)));
-            if (i != this->n()-1) { printf(", "); }
-        }
-        printf("])\n");
-    }
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
 
 #ifndef __CUDACC_RTC__
-    template <typename T, typename I, typename G, I N>
-    __host__ std::ostream& operator<<(std::ostream& os, const cusvna::AA<T,I,G,N>& a) {
-        os << "AA(b=" << a.x0() << ", x=[";
-        for (I i = 0; i < a.n(); ++i) {
-            os << a.idx(i) << ": " << a.x(i);
-            if (i != a.n()-1) { os << ", "; }
-        }
+    /* example for apply_constexpr, there is no templated lambdas until c++ 20 so we use a struct */
+    namespace impl {
+        template <int K>
+        struct print_functor {
+            template <typename T, type_id_t... Is>
+            __host__ __device__ void operator()(const AA<T,Is...>& val, std::ostream& os) const {
+#ifndef __CUDA_ARCH__
+                using V = AA<T,Is...>;
+                os << V::template pretty_idx<K>() << ": " << val.template x<K>();
+                if constexpr (K != V::N-1) {
+                    os << ", ";
+                }
+#endif /* endif __CUDA_ARCH__ */
+            }
+        };
+    }
+
+    template <typename T, type_id_t... Is>
+    __host__ std::ostream& operator<<(std::ostream& os, const AA<T,Is...>& val) {
+        using V = AA<T,Is...>;
+
+        os << "AA(b=" << val.b() << ", x=[";
+        val.template constexpr_apply<impl::print_functor>(os);
         os << "])";
+
         return os;
     }
-#endif
+#endif /* endif __CUDACC_RTC__ */
 
 } /* end of namespace cusvna */
-    
-#endif /* end of include guard: AA_H_TLKSOS6P */
+
+
+#define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::id<__COUNTER__>>(interval)
+
+
+#endif /* end of include guard: AA_CUH_NLBP0A1W */
