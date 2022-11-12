@@ -21,10 +21,10 @@ namespace detail {
 
     template <typename T>
     struct IdGen {
-        static constexpr type_id_t get_unique_id() {
+        __host__ __device__ static constexpr type_id_t get_unique_id() {
             return IdGen::dummy;
         }
-        static void dummy() {};
+        __host__ __device__ static void dummy() {};
     };
 
     template <typename T>
@@ -45,7 +45,7 @@ namespace detail {
     /* is in sequence */
     template <type_id_t I0, type_id_t... Is>
     struct is_in_sequence {
-        static constexpr bool value = (std::is_same<type_id_sequence<I0>, type_id_sequence<Is>>::value || ...);
+        static constexpr bool value = (cuda::std::is_same<type_id_sequence<I0>, type_id_sequence<Is>>::value || ...);
     };
 
     static_assert(is_in_sequence<id<0>,id<0>>::value, "is_in_sequence error");
@@ -65,7 +65,7 @@ namespace detail {
 
     template <type_id_t I, type_id_t I0, type_id_t... Is, int K>
     struct offset_in_sequence<I, type_id_sequence<I0,Is...>, K>{
-        static constexpr int value = (std::is_same<type_id_sequence<I>,type_id_sequence<I0>>::value ? K : 
+        static constexpr int value = (cuda::std::is_same<type_id_sequence<I>,type_id_sequence<I0>>::value ? K : 
                                       offset_in_sequence<I,type_id_sequence<Is...>,K+1>::value); 
     };
 
@@ -168,14 +168,14 @@ namespace detail {
     };
 
     static_assert(
-            std::is_same<
+            cuda::std::is_same<
                 unique_type_ids<type_id_sequence<>>::type,
                 type_id_sequence<>
             >::value,
             "unique_type_ids error"
             );
     static_assert(
-            std::is_same<
+            cuda::std::is_same<
                 unique_type_ids<type_id_sequence<id<3>,id<0>,id<1>,id<1>,id<0>,id<4>>>::type,
                 type_id_sequence<id<3>,id<1>,id<0>,id<4>>
             >::value,
@@ -193,7 +193,7 @@ namespace detail {
     };
     
     static_assert(
-            std::is_same<
+            cuda::std::is_same<
                 merge_type_ids<
                     type_id_sequence<>,
                     type_id_sequence<>
@@ -203,7 +203,7 @@ namespace detail {
             "merge_type_ids error"
             );
     static_assert(
-            std::is_same<
+            cuda::std::is_same<
                 merge_type_ids<
                     type_id_sequence<id<0>>,
                     type_id_sequence<id<1>>
@@ -213,7 +213,7 @@ namespace detail {
             "merge_type_ids error"
             );
     static_assert(
-            std::is_same<
+            cuda::std::is_same<
                 merge_type_ids<
                     type_id_sequence<id<0>,id<2>,id<1>>,
                     type_id_sequence<id<1>,id<3>,id<0>>

@@ -13,9 +13,7 @@ kernel_src = f"""
 
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
-using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 16;
-using AA = cusvna::AA<T,I,G,N>;
+using AA = cusvna::AA<T>;
 using Interval = cusvna::Interval<T>;
 
 __global__ void func_1d(const T xmin, const T xmax, const I nintervals,
@@ -25,21 +23,29 @@ __global__ void func_1d(const T xmin, const T xmax, const I nintervals,
 
     const T L  = xmax - xmin;
     const T dx = L / nintervals;
+    T ai, bi;
 
-    G index_generator;
     Interval xi(xmin + i*dx, xmin + (i+1)*dx);
+    auto x = AA::from_interval<0>(xi);
+    auto xx = x*x;
+    auto y = sqrt(xx - x + T(1)/T(2)) / sqrt(xx + T(1)/T(2));
 
-    AA x(xi, index_generator);
-    AA xx = x*x;
-    AA y = sqrt(xx - x + T(1)/T(2)) / sqrt(xx + T(1)/T(2));
-    if (k==1) {{
-        AA yy = y*y;
-        y = sqrt(yy - y + T(1)/T(2)) / sqrt(yy + T(1)/T(2));
+    if (k==0) {{
+        Interval yi(y);
+        ai = yi.a;
+        bi = yi.b;
+    }}
+    else {{
+        auto yy = y*y;
+        auto z = sqrt(yy - y + T(1)/T(2)) / sqrt(yy + T(1)/T(2));
+
+        Interval zi(z);
+        ai = zi.a;
+        bi = zi.b;
     }}
 
-    Interval yi(y);
-    a[i] = yi.a;
-    b[i] = yi.b;
+    a[i] = ai;
+    b[i] = bi;
 }}
 """
 

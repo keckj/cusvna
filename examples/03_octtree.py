@@ -13,10 +13,8 @@ kernel_src = f"""
 
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
-using G = cusvna::LocalThreadIndex<I>;
-constexpr I N = 21;
-using AA = cusvna::AA<T,I,G,N>;
 using Interval = cusvna::Interval<T>;
+using AA = cusvna::AA<T>;
 
 #include "examples/cuda/octree.cuh"
 """
@@ -26,7 +24,7 @@ if __name__ == "__main__":
     logger.info(f"Generating octree for function {fname}.")
 
     do_plot = False
-    nlevels = 3 if do_plot else 6
+    nlevels = 3 if do_plot else 8
 
     start_level = 4
     end_level = start_level + nlevels
@@ -77,7 +75,7 @@ if __name__ == "__main__":
     N = 2**start_level
     assert(2**(3*end_level) < np.iinfo(I).max)
 
-    nallocated = 10_000_000
+    nallocated = 100_000_000
     active_cell_indices_in  = cp.empty(nallocated, dtype=I)  # index buffer, should be large enough to handle end_level active cells count
     active_cell_indices_out = cp.empty(nallocated, dtype=I)
     active_cell_counter = cp.empty((), dtype=I)
@@ -104,7 +102,7 @@ if __name__ == "__main__":
 
         nactive = int(active_cell_counter.get())
         Ntot = 2**current_level
-        logger.info(f"  {time_ms:8.1f}ms -- level {current_level:2d} -- grid {Ntot:5d}^3 = 2^{3*current_level:2d}"
+        logger.info(f"  {1000*time_ms:8.1f}us -- level {current_level:2d} -- grid {Ntot:5d}^3 = 2^{3*current_level:2d}"
                     f" -- active cells {nactive}/{Ntot**3} ({100.0*nactive/(Ntot**3):2.2f}%)")
 
         if nactive == 0:

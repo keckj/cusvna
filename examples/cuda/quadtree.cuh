@@ -85,8 +85,6 @@ __global__ void quadtree(const T xmin, const T xmax,
         const T dx = (xmax - xmin) / nsplit;
         const T dy = (ymax - ymin) / nsplit;
             
-        G index_generator;
-        
         #pragma unroll 4
         for(size_t offset=0; offset<4; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x2) >> 1);
@@ -97,13 +95,13 @@ __global__ void quadtree(const T xmin, const T xmax,
             const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
             const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
         
-            const AA x(xi, index_generator);
-            const AA y(yi, index_generator);
+            const auto x = AA::from_interval<0>(xi);
+            const auto y = AA::from_interval<1>(yi);
 
-            const AA xy = x*y;
-            const AA z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
+            const auto xy = x*y;
+            const auto z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
         
-            bool active = (z.sign() == cusvna::Sign::UNKNOWN);
+            const bool active = (z.sign() == cusvna::Sign::UNKNOWN);
             
             if (active) {
                 cid[nactive] = cidx;

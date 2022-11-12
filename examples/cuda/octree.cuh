@@ -88,8 +88,6 @@ __global__ void octree(const T xmin, const T xmax,
         const T dy = (ymax - ymin) / nsplit;
         const T dx = (xmax - xmin) / nsplit;
         
-        G index_generator;
-        
         #pragma unroll 8
         for(size_t offset=0; offset<8; offset++) {
             const size_t i = 2 * old_i + ((offset & 0x4) >> 2);
@@ -102,15 +100,15 @@ __global__ void octree(const T xmin, const T xmax,
             const Interval yi(ymin + j*dy, ymin + (j+1)*dy);
             const Interval xi(xmin + k*dx, xmin + (k+1)*dx);
 
-            const AA z(zi, index_generator);
-            const AA y(yi, index_generator);
-            const AA x(xi, index_generator);
+            const auto z = AA::from_interval<0>(zi);
+            const auto y = AA::from_interval<1>(yi);
+            const auto x = AA::from_interval<2>(xi);
 
-            const AA zz = z*z;
-            const AA yy = y*y;
-            const AA xx = x*x;
+            const auto zz = z*z;
+            const auto yy = y*y;
+            const auto xx = x*x;
 
-            const AA w = (
+            const auto w = (
                    (x-T(2))*(x-T(2)) * (x+T(2))*(x+T(2))
                  + (y-T(2))*(y-T(2)) * (y+T(2))*(y+T(2))
                  + (z-T(2))*(z-T(2)) * (z+T(2))*(z+T(2))

@@ -14,6 +14,7 @@ kernel_src = f"""
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
 using Interval = cusvna::Interval<T>;
+using AA = cusvna::AA<T>;
 
 __global__ void func_2d(const T xmin, const T xmax,
                        const T ymin, const T ymax,
@@ -34,8 +35,8 @@ __global__ void func_2d(const T xmin, const T xmax,
     const Interval yi(ymin + i*dy, ymin + (i+1)*dy);
     const Interval xi(xmin + j*dx, xmin + (j+1)*dx);
 
-    const auto y = aa_from_interval(yi);
-    const auto x = aa_from_interval(xi);
+    const auto y = AA::from_interval<0>(yi);
+    const auto x = AA::from_interval<1>(xi);
     auto xy = x*y;
     auto z = x*x + y*y + xy - xy*xy/T(2) - T(1)/T(4);
 

@@ -25,8 +25,14 @@ class AA {
         __host__ __device__ AA(const AA& other);
         __host__ __device__ AA(const Interval<T>& interval);
         __host__ __device__ AA& operator=(const AA& other);
-
-        explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
+        
+        /* create a new variable form an interval */
+        template <type_id_t I> __host__ __device__ static AA<T,I>             from_interval(const Interval<T>& interval);
+        template <int K>       __host__ __device__ static AA<T,detail::id<K>> from_interval(const Interval<T>& interval);
+        
+        /* convert back an affine form to an interval */
+        explicit __host__ __device__ operator Interval<T>() const;
+                 __host__ __device__ Interval<T> interval() const;
 
         template <int K> __host__ __device__ static constexpr type_id_t idx();         /* returns Is[K] which represents] the index of noise symbol number K. */
         template <int K> __host__ __device__ static           intptr_t  pretty_idx();  /* returns Is[K] - constant which is the pretty index of noise symbol number K. */
@@ -54,7 +60,6 @@ class AA {
        
         /* utility functions */
         __host__ __device__ T radius() const;             /* sum of absolute symbol magnitudes */
-        __host__ __device__ Interval<T> interval() const; /* cast to an interval */
         __host__ __device__ Sign sign() const;            /* shortcut for Interval<T>(*this).sign() */
         __host__ __device__ void print() const;           /* alternative to std::cout to print on device */
             
@@ -173,6 +178,18 @@ template <typename T, type_id_t... Is>
 AA<T,Is...>::AA(const Interval<T>& interval): m_b(interval.midpoint()), m_x{interval.radius()} {
     static_assert(N==1, "Can only construct from interval when there is only one noise symbol.");
 }
+        
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+__host__ __device__ AA<T,I> AA<T,Is...>::from_interval(const Interval<T>& interval) {
+    return AA<T,I>(interval);
+}
+
+template <typename T, type_id_t... Is>
+template <int K>
+__host__ __device__ AA<T,detail::id<K>> AA<T,Is...>::from_interval(const Interval<T>& interval) {
+    return AA<T,detail::id<K>>(interval);
+}
 
 template <typename T, type_id_t... Is>
 template <int K> 
@@ -252,14 +269,14 @@ __host__ __device__ T AA<T,Is...>::symbol_magnitude() const {
 template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
 AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) {
-    this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
+    this->apply_impl(cuda::std::forward<Functor>(f), cuda::std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
     return *this;
 }
 
 template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
 const AA<T,Is...>& AA<T,Is...>::apply(Functor&& f, Args&&... args) const {
-    this->apply_impl(std::forward<Functor>(f), std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
+    this->apply_impl(cuda::std::forward<Functor>(f), cuda::std::forward<Args>(args)..., detail::make_integer_sequence<N>{});
     return *this;
 }
 
@@ -279,7 +296,7 @@ template <typename T, type_id_t... Is>
 template <template <int> class Functor, typename... Args>
 const AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) const {
     if constexpr (N > 0) {
-        this->constexpr_apply_impl<Functor,0,Args...>(std::forward<Args>(args)...);
+        this->constexpr_apply_impl<Functor,0,Args...>(cuda::std::forward<Args>(args)...);
     }
     return *this;
 }
@@ -289,7 +306,7 @@ template <template <int> class Functor, int K, typename... Args>
 void AA<T,Is...>::constexpr_apply_impl(Args&&... args) const {
     Functor<K>()(*this, args...);
     if constexpr (K+1<N) {
-        this->constexpr_apply_impl<Functor,K+1,Args...>(std::forward<Args>(args)...);
+        this->constexpr_apply_impl<Functor,K+1,Args...>(cuda::std::forward<Args>(args)...);
     }
 }
 
@@ -297,7 +314,7 @@ template <typename T, type_id_t... Is>
 template <template <int> class Functor, typename... Args>
 AA<T,Is...>& AA<T,Is...>::constexpr_apply(Args&&... args) {
     if constexpr (N > 0) {
-        this->constexpr_apply_impl<Functor,0,Args...>(std::forward<Args>(args)...);
+        this->constexpr_apply_impl<Functor,0,Args...>(cuda::std::forward<Args>(args)...);
     }
     return *this;
 }
@@ -307,7 +324,7 @@ template <template <int> class Functor, int K, typename... Args>
 void AA<T,Is...>::constexpr_apply_impl(Args&&... args) {
     Functor<K>()(*this, args...);
     if constexpr (K+1<N) {
-        this->constexpr_apply_impl<Functor,K+1,Args...>(std::forward<Args>(args)...);
+        this->constexpr_apply_impl<Functor,K+1,Args...>(cuda::std::forward<Args>(args)...);
     }
 }
 
@@ -394,7 +411,7 @@ namespace impl {
     struct outplace_add_functor {
         template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
         __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t I = out.template idx<K>();
+            constexpr type_id_t I = AA<T,Is...>::template idx<K>();
             out.template x<K>() = lhs.template symbol_magnitude<I,0>() + rhs.template symbol_magnitude<I,0>();
         }
     };
@@ -403,7 +420,7 @@ namespace impl {
     struct outplace_subtract_functor {
         template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
         __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t I = out.template idx<K>();
+            constexpr type_id_t I = AA<T,Is...>::template idx<K>();
             out.template x<K>() = lhs.template symbol_magnitude<I,0>() - rhs.template symbol_magnitude<I,0>();
         }
     };
@@ -412,8 +429,8 @@ namespace impl {
     struct outplace_multiply_functor {
         template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
         __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t I = out.template idx<K>();
-            if constexpr (lhs.template has_symbol<I>() || rhs.template has_symbol<I>()) {
+            constexpr type_id_t I = AA<T,Is...>::template idx<K>();
+            if constexpr (AA<T,Js...>::template has_symbol<I>() || AA<T,Ks...>::template has_symbol<I>()) {
                 out.template x<I>() = lhs.template symbol_magnitude<I,0>() * rhs.b() + rhs.template symbol_magnitude<I,0>() * lhs.b();
             }
             else {
@@ -427,8 +444,8 @@ namespace impl {
         template <typename T, type_id_t... Is, type_id_t... Js>
         __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& base, 
                 const T& alpha, const T& zeta, const T& delta) const {
-            constexpr type_id_t I = out.template idx<K>();
-            if constexpr (base.template has_symbol<I>()) {
+            constexpr type_id_t I = AA<T,Is...>::template idx<K>();
+            if constexpr (AA<T,Js...>::template has_symbol<I>()) {
                 out.template x<I>() = alpha * base.template x<I>();
             }
             else {
@@ -637,7 +654,10 @@ __host__ __device__ ResultType log(const AA<T, Is...>& val) {
 } /* end of namespace cusvna */
 
 
-#define aa_from_interval(interval) cusvna::AA<decltype(interval)::type, cusvna::detail::id<__COUNTER__>>(interval)
+/* NVRTC does not support __COUNTER__ */
+#ifndef __CUDACC_RTC__
+#define new_aa_from_interval(interval) cusvna::AA<decltype(interval)::type>::from_interval<__COUNTER__>(interval)
+#endif
 
 
 #endif /* end of include guard: AA_CUH_NLBP0A1W */
