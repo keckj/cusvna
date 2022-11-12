@@ -49,17 +49,17 @@ __device__ float f(const float3& p, const float3& origin, const float radius) {
     return norm3df(dx.x, dx.y, dx.z) - radius;
 }
 #else
-template <typename T>
-__device__ T f(const T& x, const T& y, const T& z,
+template <typename X, typename Y, typename Z>
+__device__ auto f(const X& x, const Y& y, const Z& z,
                    const float3& origin, const float radius) {
-    const T dx(x-origin.x);
-    const T dy(y-origin.y);
-    const T dz(z-origin.z);
+    const auto dx(x-origin.x);
+    const auto dy(y-origin.y);
+    const auto dz(z-origin.z);
     return dx*dx + dy*dy + dz*dz - radius*radius;
 }
 
 __device__ float f(const float3& p, const float3& origin, const float radius) {
-    return f<float>(p.x, p.y, p.z, origin, radius);
+    return f(p.x, p.y, p.z, origin, radius);
 }
 #endif
 
@@ -93,10 +93,8 @@ extern "C" __global__ void __intersection__levelset() {
 #else
     /* Ray marching using general interval tracing */
     using T = float;
-    using I = unsigned int;
-    using G = cusvna::LocalThreadIndex<I>;
-    constexpr I N = 8;
-    using AA = cusvna::AA<T,I,G,N>;
+    using AA = cusvna::AA<T>;
+    using Interval = cusvna::Interval<T>;
 
     /* See Spelunking the Deep: Guaranteed Queries on General Neural Implicit Surfaces via Range Analysis, procedure 2 */
     const float np = 1.5f;
@@ -118,12 +116,12 @@ extern "C" __global__ void __intersection__levelset() {
         const float3 c = ray_orig + (t+sigma/2)*ray_dir;
         const float3 v = (sigma/2)*ray_dir;
         
-        G g;
-        const AA xv = AA(g, c.x).append_new_symbol(v.x);
-        const AA yv = AA(g, c.y).append_new_symbol(v.y);
-        const AA zv = AA(g, c.z).append_new_symbol(v.z);
+        const auto xv = AA::from_interval<0>(Interval(c.x - v.x, c.x + v.x));
+        const auto yv = AA::from_interval<1>(Interval(c.y - v.y, c.y + v.y));
+        const auto zv = AA::from_interval<2>(Interval(c.z - v.z, c.z + v.z));
 
-        const AA w = f(xv, yv, zv, origin, radius);
+        const auto w = f(xv, yv, zv, origin, radius);
+
         if (w.sign() == cusvna::Sign::UNKNOWN) {
             t += delta;
             sigma *= nm;
