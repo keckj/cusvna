@@ -50,17 +50,17 @@ int main() {
     assert_equal(w*w, w_*w_, "w*w");
 
     assert_equal(reciprocal(w), inv(w_), "1/w");
-    /*assert_equal(2.0/w, 2.0*inv(w_), "2/w");*/
-    /*assert_equal(w/w, w_*inv(w_), "w/w");*/
-    /*assert_equal(z/w, z_/w_, "z/w");*/
+    assert_equal(2.0/w, 2.0*inv(w_), "2/w");
+    assert_equal(w/w, w_*inv(w_), "w/w");
+    assert_equal(z/w, z_/w_, "z/w");
     
-    /*assert_equal(x*y/y, x_*y_/y_, "x*y/y");*/
-    /*assert_equal(y*y/y, y_*y_/y_, "y*y/y");*/
-    /*assert_equal(w*w/w, w_*w_/w_, "w*w/w");*/
+    assert_equal(x*y/y, x_*y_/y_, "x*y/y");
+    assert_equal(y*y/y, y_*y_/y_, "y*y/y");
+    assert_equal(w*w/w, w_*w_/w_, "w*w/w");
     
-    /*assert_equal(sqrt(w), sqrt(w_), "sqrt(w)");*/
-    /*assert_equal(exp(w), exp(w_), "exp(w)");*/
-    /*assert_equal(log(w), log(w_), "log(w)");*/
+    assert_equal(sqrt(w), sqrt(w_), "sqrt(w)");
+    assert_equal(exp(w), exp(w_), "exp(w)");
+    assert_equal(log(w), log(w_), "log(w)");
 
     /*assert_equal(sinh(w), sinh(w_), "sinh(w)");*/
     /*assert_equal(cosh(w), cosh(w_), "cosh(w)");*/

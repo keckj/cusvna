@@ -29,30 +29,35 @@ class AA {
 
         explicit __host__ __device__ operator Interval<T>() const;  /* cast operator to convert back an affine form to an interval */
 
-        template <int K> __host__ __device__ static constexpr type_id_t idx();         /* returns Is[K] which [represents] the index of noise symbol number K. */
+        template <int K> __host__ __device__ static constexpr type_id_t idx();         /* returns Is[K] which represents] the index of noise symbol number K. */
         template <int K> __host__ __device__ static           intptr_t  pretty_idx();  /* returns Is[K] - constant which is the pretty index of noise symbol number K. */
         
         /* base coefficient of the affine form */
         __host__ __device__       T& b();        
         __host__ __device__ const T& b() const;
         
-        /* x<K> is the magnitude vector of the uncertainty coerresponding to noise symbol number K. */
+        /* x<K> is the magnitude of the uncertainty corresponding to Kth noise symbol. */
         template <int K> __host__ __device__       T& x();
         template <int K> __host__ __device__ const T& x() const;
         
-        /* has_symbol<I> is true if I represents an existing noise symbol in this form <=> (I is in Is) */
+        /* x<I> is the magnitude of the uncertainty corresponding to noise symbol index I. */
+        template <type_id_t I> __host__ __device__       T& x();
+        template <type_id_t I> __host__ __device__ const T& x() const;
+        
+        /* has_symbol<I> is true if I represents an existing noise symbol in this affine arithmetic form */
         template <type_id_t I> __host__ __device__ static constexpr bool has_symbol();
         
-        /* symbol_offset<I> is the offset of I into Is for an existign symbol */
+        /* symbol_offset<I> is the offset K of I into Is for an existing symbol */
         template <type_id_t I> __host__ __device__ static constexpr int symbol_offset();
         
-        /* get<I,D> returns x<index<I>> for an existing noise symbol else return default value T(D) */
+        /* get<I,D> returns x<I> for an existing noise symbol else return default value T(D) */
         template <type_id_t I, int D=0> __host__ __device__ T symbol_magnitude() const;
-        
+       
+        /* utility functions */
         __host__ __device__ T radius() const;             /* sum of absolute symbol magnitudes */
         __host__ __device__ Interval<T> interval() const; /* cast to an interval */
         __host__ __device__ Sign sign() const;            /* shortcut for Interval<T>(*this).sign() */
-        __host__ __device__ void print() const;           /* alternative to std::cout for nvrtc */
+        __host__ __device__ void print() const;           /* alternative to std::cout to print on device */
             
         /* type preserving operators */
         __host__ __device__ AA operator-() const;
@@ -89,6 +94,9 @@ class AA {
 namespace op {
     static constexpr int MUL = 1;
     static constexpr int RECIPROCAL = 2;
+    static constexpr int SQRT = 3;
+    static constexpr int EXP = 4;
+    static constexpr int LOG = 5;
 }
 
 
@@ -114,15 +122,38 @@ __host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js..
 template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType=detail::merged_t<AA<T,Is...>, AA<T,Js...>>>
 __host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
 
-template <typename T, type_id_t... Is, type_id_t... Js, 
+template <typename T, type_id_t... Is, type_id_t... Js,
           type_id_t NewSymbolId = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::MUL>,
           typename ResultType = detail::insert_new_symbol_t<detail::merged_t<AA<T,Is...>, AA<T,Js...>>, NewSymbolId>>
 __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
 
+template <typename T, type_id_t... Is>
+__host__ __device__ auto operator/(const T& lhs, const AA<T,Is...>& rhs);
+
+template <typename T, type_id_t... Is, type_id_t... Js>
+__host__ __device__ auto operator/(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs);
+
+
+/* functions that add a introduce a new error symbol */
 template <typename T, type_id_t... Is, 
           type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::RECIPROCAL>,
           typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
 __host__ __device__ ResultType reciprocal(const AA<T,Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::SQRT>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType sqrt(const AA<T, Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::EXP>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType exp(const AA<T, Is...>& val);
+
+template <typename T, type_id_t... Is, 
+          type_id_t NewSymbolId = detail::unop_type_id<AA<T,Is...>, op::LOG>,
+          typename ResultType = detail::insert_new_symbol_t<AA<T,Is...>, NewSymbolId>>
+__host__ __device__ ResultType log(const AA<T, Is...>& val);
 
 
 /* other operators */
@@ -181,6 +212,20 @@ const T& AA<T,Is...>::x() const {
     static_assert(K<N); 
     return cuda::std::get<K>(m_x);
 }
+
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+T& AA<T,Is...>::x() {
+    static_assert(has_symbol<I>()); 
+    return x<symbol_offset<I>()>();
+}
+        
+template <typename T, type_id_t... Is>
+template <type_id_t I> 
+const T& AA<T,Is...>::x() const {
+    static_assert(has_symbol<I>()); 
+    return x<symbol_offset<I>()>();
+}
         
 template <typename T, type_id_t... Is>
 template <type_id_t I> 
@@ -198,13 +243,12 @@ template <typename T, type_id_t... Is>
 template <type_id_t I, int D>
 __host__ __device__ T AA<T,Is...>::symbol_magnitude() const {
     if constexpr (has_symbol<I>()) {
-        return x<symbol_offset<I>()>();
+        return x<I>();
     }
     else {
         return T(D);
     }
 }
-        
         
 template <typename T, type_id_t... Is>
 template <typename Functor, typename... Args> 
@@ -346,6 +390,55 @@ namespace impl {
             lhs.template x<K>() -= rhs.template x<K>(); 
         }
     };
+    
+    template <int K>
+    struct outplace_add_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<I,0>() + rhs.template symbol_magnitude<I,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_subtract_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            out.template x<K>() = lhs.template symbol_magnitude<I,0>() - rhs.template symbol_magnitude<I,0>();
+        }
+    };
+    
+    template <int K>
+    struct outplace_multiply_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
+            constexpr type_id_t I = out.template idx<K>();
+            if constexpr (lhs.template has_symbol<I>() || rhs.template has_symbol<I>()) {
+                out.template x<I>() = lhs.template symbol_magnitude<I,0>() * rhs.b() + rhs.template symbol_magnitude<I,0>() * lhs.b();
+            }
+            else {
+                out.template x<I>() = lhs.radius() * rhs.radius();
+            }
+        }
+    };
+    
+    template <int K>
+    struct affine_functor {
+        template <typename T, type_id_t... Is, type_id_t... Js>
+        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& base, 
+                const T& alpha, const T& zeta, const T& delta) const {
+            constexpr type_id_t I = out.template idx<K>();
+            if constexpr (base.template has_symbol<I>()) {
+                out.template x<I>() = alpha * base.template x<I>();
+            }
+            else {
+                out.b() = alpha * base.b() + zeta;
+                out.template x<I>() = delta;
+            }
+        }
+    };
+
 }
 
 template <typename T, type_id_t... Is>
@@ -405,35 +498,6 @@ __host__ __device__ AA<T,Is...> operator/(const AA<T,Is...>& lhs, const T& rhs) 
     return +lhs /= rhs;
 }
 
-namespace impl {
-    template <int K>
-    struct outplace_add_functor {
-        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
-        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t idx = out.template idx<K>();
-            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() + rhs.template symbol_magnitude<idx,0>();
-        }
-    };
-    
-    template <int K>
-    struct outplace_subtract_functor {
-        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
-        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t idx = out.template idx<K>();
-            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() - rhs.template symbol_magnitude<idx,0>();
-        }
-    };
-    
-    template <int K>
-    struct outplace_multiply_functor {
-        template <typename T, type_id_t... Is, type_id_t... Js, type_id_t... Ks>
-        __host__ __device__ void operator()(AA<T,Is...>& out, const AA<T,Js...>& lhs, const AA<T,Ks...>& rhs) const {
-            constexpr type_id_t idx = out.template idx<K>();
-            out.template x<K>() = lhs.template symbol_magnitude<idx,0>() * rhs.b() + rhs.template symbol_magnitude<idx,0>() * lhs.b();
-        }
-    };
-}
-
 template <typename T, type_id_t... Is, type_id_t... Js, typename ResultType>
 __host__ __device__ ResultType operator+(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out(lhs.b() + rhs.b());
@@ -449,17 +513,97 @@ __host__ __device__ ResultType operator-(const AA<T,Is...>& lhs, const AA<T,Js..
 template <typename T, type_id_t... Is, type_id_t... Js, type_id_t NewSymbolId, typename ResultType>
 __host__ __device__ ResultType operator*(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
     ResultType out(lhs.b() * rhs.b());
-    out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
-    out.template x<out.template symbol_offset<NewSymbolId>()>() = lhs.radius() * rhs.radius();
-    return out;
+    return out.template constexpr_apply<impl::outplace_multiply_functor>(lhs, rhs);
+}
+
+template <typename T, type_id_t... Is>
+__host__ __device__ auto operator/(const T& lhs, const AA<T,Is...>& rhs) {
+    return lhs * reciprocal(rhs);
+}
+
+template <typename T, type_id_t... Is, type_id_t... Js>
+__host__ __device__ auto operator/(const AA<T,Is...>& lhs, const AA<T,Js...>& rhs) {
+    return lhs * reciprocal(rhs);
 }
 
 template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
 __host__ __device__ ResultType reciprocal(const AA<T,Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.12 */
     ResultType out;
-    return out;
-}
     
+    Interval<T> interval(val);
+    if (interval.a <= T(0) && interval.b >= T(0)) {
+        out.template x<NewSymbolId>() = cuda::std::numeric_limits<T>::infinity();
+        return out;
+    }
+
+    const T fa = ::fabs(interval.a);
+    const T fb = ::fabs(interval.b);
+    const T a = min(fa, fb);
+    const T b = max(fa, fb);
+    
+    const T alpha = -T(1)/(b*b);
+    const T dmin = T(1)/a - alpha*a;
+    const T dmax = T(2)/b; // - alpha*b;
+    
+    const T zeta = (interval.a < T(0) ? T(-1) : T(1)) * (dmin + dmax)/T(2);
+    const T delta = (dmax - dmin)/T(2);
+
+    return out.template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType sqrt(const AA<T, Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.9.1 */
+
+    Interval<T> interval(val);
+    const T a = max(interval.a, T(0));  /* we assume a is always positive */
+    const T b = max(interval.b, T(0));  /* we assume b is always positive */
+    
+    const T t = ::sqrt(a) + ::sqrt(b);
+    const T alpha = T(1)/t;
+    const T zeta = t/T(8) + ::sqrt(a*b)/(T(2)*t);
+    const T delta = (a+b-T(2)*::sqrt(a*b)) / (T(8)*t);
+
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType exp(const AA<T, Is...>& val) {
+    /* Self-Validated Numerical Methods and Applications - section 3.12 */
+
+    Interval<T> interval(val);
+    const T a = interval.a;
+    const T b = interval.b;
+
+    const T ea = ::exp(a);
+    const T eb = ::exp(b);
+    const T alpha = (eb - ea)/(b - a);
+    
+    const T zeta  = alpha * (T(1) - ::log(alpha));
+    const T delta = (alpha * (::log(alpha) - T(1) - a) + ea)/T(2);
+
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
+
+template <typename T, type_id_t... Is, type_id_t NewSymbolId, typename ResultType>
+__host__ __device__ ResultType log(const AA<T, Is...>& val) {
+    Interval<T> interval(val);
+    const T a = interval.a;
+    const T b = interval.b;
+
+    const T la = ::log(a);
+    const T lb = ::log(b);
+    const T alpha = (lb - la)/(b - a);
+
+    const T xs = T(1)/alpha;
+    const T ys = alpha * (xs - a) + la;
+    
+    const T zeta =  -alpha*xs + (::log(xs)+ys)/T(2);
+    const T delta = (::log(xs) - ys)/T(2);
+
+    return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta);
+}
 
 #ifndef __CUDACC_RTC__
     /* example for apply_constexpr, there is no templated lambdas until c++ 20 so we use a struct */
