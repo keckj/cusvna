@@ -34,6 +34,8 @@ int main() {
 
             auto z = f(x,y);
             AAF z_ = f(x_,y_);
+        
+            z.print();
 
             assert_tighter(z, z_);
         }

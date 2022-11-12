@@ -22,7 +22,7 @@ bool tighter(const interval& lhs, const cusvna::Interval<double>& rhs) {
     return (lhs.left() <= rhs.a) && (lhs.right() >= rhs.b);
 }
 
-template <cusvna::type_id_t... Is>
+template <typename... Is>
 bool operator==(const AAF& lhs, const cusvna::AA<double,Is...>& rhs) {
     return lhs.convert() == rhs.interval();
 }
@@ -48,7 +48,7 @@ void assert_equal(const cusvna::Interval<double>& lhs, const interval& rhs, bool
     }
 }
 
-template <cusvna::type_id_t... Is>
+template <typename... Is>
 void assert_equal(const cusvna::AA<double,Is...>& lhs, const AAF& rhs, 
         const std::string& msg = "") {
     if (rhs == lhs) { return; }
@@ -65,7 +65,7 @@ void assert_equal(const cusvna::AA<double,Is...>& lhs, const AAF& rhs,
     throw std::runtime_error( "AA mistmatch." );
 }
 
-template <cusvna::type_id_t... Is>
+template <typename... Is>
 void assert_tighter(const cusvna::AA<double,Is...>& lhs, const AAF& rhs, 
         const std::string& msg = "") {
     if (tighter(rhs.convert(), lhs.interval())) { return; }

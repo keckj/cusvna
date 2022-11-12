@@ -15,121 +15,136 @@ namespace detail {
     template <size_t N>
     using make_integer_sequence = cuda::std::make_integer_sequence<int, N>;
    
-    
-    /* generate unique type_id from a typename, type_id_t are just equal-comparable so no sorting is possible */
-    using type_id_t = void(*)();
-    
-    template <typename T>
-    struct IdGen {
-        __host__ __device__ static constexpr type_id_t get_unique_id() {
-            return &IdGen::dummy;
-        }
-        __host__ __device__ static void dummy() {};
-    };
-
-    template <typename T>
-    static constexpr type_id_t type_id = IdGen<T>::get_unique_id(); 
-    
     template <int I>
-    static constexpr type_id_t id = type_id<integer_sequence<I>>;
-
-    static_assert(type_id<int> == type_id<int>);
-    static_assert(type_id<float> == type_id<float>);
-    static_assert(id<0> == id<0>);
-    static_assert(id<1> == id<1>);
+    struct id {};
     
-    template <type_id_t... Is>
-    using type_id_sequence = cuda::std::integer_sequence<type_id_t, Is...>;
+    template <typename... Is>
+    struct type_id_sequence {};
 
-    
-    /* compare type_id values */
-    template <type_id_t T0, type_id_t T1>
-    using Same = cuda::std::is_same<type_id_sequence<T0>, type_id_sequence<T1>>;
+    template <typename I0, typename I1>
+    static constexpr bool same_id = cuda::std::is_same<I0, I1>::value;
 
-    static_assert(Same<id<0>,id<0>>::value);
-    static_assert(Same<id<1>,id<1>>::value);
-    static_assert(!Same<id<0>,id<1>>::value);
-    static_assert(!Same<id<1>,id<0>>::value);
-    static_assert(!Same<type_id<float>,type_id<int>>::value);
-    static_assert(!Same<type_id<float>,id<0>>::value);
-    static_assert(!Same<id<0>,type_id<int>>::value);
-
+    static_assert(same_id<id<0>,id<0>>);
+    static_assert(same_id<id<1>,id<1>>);
+    static_assert(!same_id<id<0>,id<1>>);
+    static_assert(!same_id<int,id<1>>);
+    static_assert(!same_id<id<0>,int>);
 
     /* is in sequence */
-    template <type_id_t I0, type_id_t... Is>
-    struct is_in_sequence {
-        static constexpr bool value = (Same<I0,Is>::value || ...);
+    template <typename I0, typename... Is>
+    struct IdInSequence {
+        static constexpr bool value = (same_id<I0,Is> || ...);
     };
-
-    static_assert(is_in_sequence<id<0>,id<0>>::value, "is_in_sequence error");
-    static_assert(!is_in_sequence<id<0>,id<1>>::value, "is_in_sequence error");
-    static_assert(is_in_sequence<id<0>,id<0>,id<1>,id<2>,id<3>,id<4>>::value, "is_in_sequence error");
-    static_assert(is_in_sequence<id<2>,id<0>,id<1>,id<2>,id<3>,id<4>>::value, "is_in_sequence error");
-    static_assert(is_in_sequence<id<4>,id<0>,id<1>,id<2>,id<3>,id<4>>::value, "is_in_sequence error");
-    static_assert(!is_in_sequence<id<42>,id<0>,id<1>,id<2>,id<3>,id<4>>::value, "is_in_sequence error");
-    static_assert(!is_in_sequence<id<0>>::value, "is_in_sequence error");
     
+    template <typename I0, typename... Is>
+    static constexpr bool id_in_sequence = IdInSequence<I0, Is...>::value;
+
+    static_assert(id_in_sequence<id<0>,id<0>>, "id_in_sequence error");
+    static_assert(!id_in_sequence<id<0>,id<1>>, "id_in_sequence error");
+    static_assert(id_in_sequence<id<0>,id<0>,id<1>,id<2>,id<3>,id<4>>, "id_in_sequence error");
+    static_assert(id_in_sequence<id<2>,id<0>,id<1>,id<2>,id<3>,id<4>>, "id_in_sequence error");
+    static_assert(id_in_sequence<id<4>,id<0>,id<1>,id<2>,id<3>,id<4>>, "id_in_sequence error");
+    static_assert(!id_in_sequence<id<42>,id<0>,id<1>,id<2>,id<3>,id<4>>, "id_in_sequence error");
+    static_assert(!id_in_sequence<id<0>>, "id_in_sequence error");
     
     /* offset in sequence */
-    template <type_id_t, typename, int K=0>
-    struct offset_in_sequence { 
+    template <typename, typename, int K=0>
+    struct OffsetInSequence { 
     };
 
-    template <type_id_t I, type_id_t I0, type_id_t... Is, int K>
-    struct offset_in_sequence<I, type_id_sequence<I0,Is...>, K>{
-        static constexpr int value = (Same<I,I0>::value ? K : offset_in_sequence<I,type_id_sequence<Is...>,K+1>::value); 
+    template <typename I, typename I0, typename... Is, int K>
+    struct OffsetInSequence<I, type_id_sequence<I0,Is...>, K>{
+        static constexpr int value = (same_id<I,I0> ? K : OffsetInSequence<I,type_id_sequence<Is...>,K+1>::value); 
     };
     
-    template <type_id_t I, int K>
-    struct offset_in_sequence<I, type_id_sequence<>, K>{
+    template <typename I, int K>
+    struct OffsetInSequence<I, type_id_sequence<>, K>{
         static constexpr int value = -1;
     };
-
-    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<0>>>::value == 0, "offset_in_sequence error");
-    static_assert(offset_in_sequence<id<1>,type_id_sequence<id<0>,id<1>>>::value == 1, "offset_in_sequence error");
-    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<1>>>::value == -1, "offset_in_sequence error");
-    static_assert(offset_in_sequence<id<0>,type_id_sequence<>>::value == -1, "offset_in_sequence error");
-    static_assert(offset_in_sequence<id<0>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 2, "offset_in_sequence error");
-    static_assert(offset_in_sequence<id<2>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 1, "offset_in_sequence error");
     
-    /* is set */
-    template <typename>
-    struct is_set {};
+    static_assert(OffsetInSequence<id<0>,type_id_sequence<id<0>>>::value == 0, "OffsetInSequence error");
+    static_assert(OffsetInSequence<id<1>,type_id_sequence<id<0>,id<1>>>::value == 1, "OffsetInSequence error");
+    static_assert(OffsetInSequence<id<0>,type_id_sequence<id<1>>>::value == -1, "OffsetInSequence error");
+    static_assert(OffsetInSequence<id<0>,type_id_sequence<>>::value == -1, "OffsetInSequence error");
+    static_assert(OffsetInSequence<id<0>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 2, "OffsetInSequence error");
+    static_assert(OffsetInSequence<id<2>,type_id_sequence<id<1>,id<2>,id<0>>>::value == 1, "OffsetInSequence error");
+    
 
-    template <type_id_t I0, type_id_t... Is>
-    struct is_set<type_id_sequence<I0, Is...>> {
-        static constexpr bool value = (!is_in_sequence<I0, Is...>::value) && is_set<type_id_sequence<Is...>>::value;
+    /* extract from sequence */
+    template <int N, typename, int K=0>
+    struct ExtractFromSequence { 
     };
 
-    template <type_id_t I0>
-    struct is_set<type_id_sequence<I0>> {
+    template <int N, typename I0, typename... Is, int K>
+    struct ExtractFromSequence<N, type_id_sequence<I0,Is...>, K>{
+        using type = typename cuda::std::conditional<
+                N==K,
+                I0,
+                typename ExtractFromSequence<N, type_id_sequence<Is...>, K+1>::type
+            >::type;
+    };
+    
+    template <int N, int K>
+    struct ExtractFromSequence<N, type_id_sequence<>, K>{
+        using type = void;
+    };
+    
+    static_assert(cuda::std::is_same<
+            typename ExtractFromSequence<0, type_id_sequence<id<0>>>::type,
+            id<0>
+        >::value, "ExtractFromSequence error");
+    static_assert(cuda::std::is_same<
+            typename ExtractFromSequence<0, type_id_sequence<id<0>,id<1>>>::type,
+            id<0>
+        >::value, "ExtractFromSequence error");
+    static_assert(cuda::std::is_same<
+            typename ExtractFromSequence<1, type_id_sequence<id<0>,id<1>>>::type,
+            id<1>
+        >::value, "ExtractFromSequence error");
+    static_assert(cuda::std::is_same<
+            typename ExtractFromSequence<2, type_id_sequence<id<0>,id<1>,id<2>,id<3>>>::type,
+            id<2>
+        >::value, "ExtractFromSequence error");
+
+    /* is set */
+    template <typename>
+    struct IsSet {};
+
+    template <typename I0, typename... Is>
+    struct IsSet<type_id_sequence<I0, Is...>> {
+        static constexpr bool value = (!id_in_sequence<I0, Is...>) && IsSet<type_id_sequence<Is...>>::value;
+    };
+
+    template <typename I0>
+    struct IsSet<type_id_sequence<I0>> {
         static constexpr bool value = true;
     };
     
     template <>
-    struct is_set<type_id_sequence<>> {
+    struct IsSet<type_id_sequence<>> {
         static constexpr bool value = true;
     };
     
-    static_assert(is_set<type_id_sequence<>>::value, "is_set error");
-    static_assert(is_set<type_id_sequence<id<3>>>::value, "is_set error");
-    static_assert(is_set<type_id_sequence<id<0>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
-    static_assert(!is_set<type_id_sequence<id<0>,id<3>,id<3>>>::value, "is_set error");
-    static_assert(!is_set<type_id_sequence<id<1>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
-    static_assert(!is_set<type_id_sequence<id<4>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
-    static_assert(!is_set<type_id_sequence<id<3>,id<1>,id<2>,id<8>,id<7>,id<1>>>::value, "is_set error");
+    static_assert(IsSet<type_id_sequence<>>::value, "is_set error");
+    static_assert(IsSet<type_id_sequence<id<3>>>::value, "is_set error");
+    static_assert(IsSet<type_id_sequence<id<0>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
+    static_assert(!IsSet<type_id_sequence<id<0>,id<3>,id<3>>>::value, "is_set error");
+    static_assert(!IsSet<type_id_sequence<id<1>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
+    static_assert(!IsSet<type_id_sequence<id<4>,id<1>,id<2>,id<3>,id<4>,id<5>>>::value, "is_set error");
+    static_assert(!IsSet<type_id_sequence<id<3>,id<1>,id<2>,id<8>,id<7>,id<1>>>::value, "is_set error");
+
 
     /* append to sequence */
-    template <type_id_t, typename>
-    struct append_to_sequence {};
+    template <typename, typename>
+    struct AppendToSequence {};
 
-    template <type_id_t I0, type_id_t... Is>
-    struct append_to_sequence<I0, type_id_sequence<Is...>> {
+    template <typename I0, typename... Is>
+    struct AppendToSequence<I0, type_id_sequence<Is...>> {
         using type = type_id_sequence<Is..., I0>;
     };
     static_assert(
         cuda::std::is_same<
-            append_to_sequence<
+            AppendToSequence<
                 id<42>,
                 type_id_sequence<id<0>,id<1>,id<2>,id<3>,id<4>>
                 >::type,
@@ -140,111 +155,111 @@ namespace detail {
     
 
     /* prepend to sequence */
-    template <type_id_t, typename>
-    struct prepend_to_sequence {};
+    template <typename, typename>
+    struct PrependToSequence {};
 
-    template <type_id_t I0, type_id_t... Is>
-    struct prepend_to_sequence<I0, type_id_sequence<Is...>> {
+    template <typename I0, typename... Is>
+    struct PrependToSequence<I0, type_id_sequence<Is...>> {
         using type = type_id_sequence<I0, Is...>;
     };
     static_assert(
         cuda::std::is_same<
-            prepend_to_sequence<
+            PrependToSequence<
                 id<42>,
                 type_id_sequence<id<0>,id<1>,id<2>,id<3>,id<4>>
                 >::type,
             type_id_sequence<id<42>,id<0>,id<1>,id<2>,id<3>,id<4>>
             >::value,
-        "prepend_to_sequence error"
+        "PrependToSequence error"
         );
 
 
     /* extract unique type ids in sequence */
     template <typename>
-    struct unique_type_ids {};
+    struct UniqueTypeIds {};
 
-    template <type_id_t I0, type_id_t... Is>
-    struct unique_type_ids<type_id_sequence<I0, Is...>> {
-        using subtype = typename unique_type_ids<type_id_sequence<Is...>>::type;
+    template <typename I0, typename... Is>
+    struct UniqueTypeIds<type_id_sequence<I0, Is...>> {
+        using subtype = typename UniqueTypeIds<type_id_sequence<Is...>>::type;
         using type = typename cuda::std::conditional<
-               is_in_sequence<I0,Is...>::value,
+               id_in_sequence<I0,Is...>,
                subtype,
-               typename prepend_to_sequence<I0, subtype>::type
+               typename PrependToSequence<I0, subtype>::type
         >::type;
     };
 
-    template <type_id_t I0>
-    struct unique_type_ids<type_id_sequence<I0>> {
+    template <typename I0>
+    struct UniqueTypeIds<type_id_sequence<I0>> {
         using type = type_id_sequence<I0>;
     };
     
     template <>
-    struct unique_type_ids<type_id_sequence<>> {
+    struct UniqueTypeIds<type_id_sequence<>> {
         using type = type_id_sequence<>;
     };
 
     static_assert(
             cuda::std::is_same<
-                unique_type_ids<type_id_sequence<>>::type,
+                UniqueTypeIds<type_id_sequence<>>::type,
                 type_id_sequence<>
             >::value,
-            "unique_type_ids error"
+            "UniqueTypeIds error"
             );
     static_assert(
             cuda::std::is_same<
-                unique_type_ids<type_id_sequence<id<3>,id<0>,id<1>,id<1>,id<0>,id<4>>>::type,
+                UniqueTypeIds<type_id_sequence<id<3>,id<0>,id<1>,id<1>,id<0>,id<4>>>::type,
                 type_id_sequence<id<3>,id<1>,id<0>,id<4>>
             >::value,
-            "unique_type_ids error"
+            "UniqueTypeIds error"
             );
     
 
     /* merge sequences and extract set of type ids */
     template <typename, typename>
-    struct merge_type_ids {};
+    struct MergeTypeIds {};
     
-    template <type_id_t... Is, type_id_t... Js>
-    struct merge_type_ids<type_id_sequence<Is...>, type_id_sequence<Js...>> {
-        using type = typename unique_type_ids<type_id_sequence<Is..., Js...>>::type;
+    template <typename... Is, typename... Js>
+    struct MergeTypeIds<type_id_sequence<Is...>, type_id_sequence<Js...>> {
+        using type = typename UniqueTypeIds<type_id_sequence<Is..., Js...>>::type;
     };
     
     static_assert(
             cuda::std::is_same<
-                merge_type_ids<
+                MergeTypeIds<
                     type_id_sequence<>,
                     type_id_sequence<>
                 >::type,
                 type_id_sequence<>
             >::value,
-            "merge_type_ids error"
+            "MergeTypeIds error"
             );
     static_assert(
             cuda::std::is_same<
-                merge_type_ids<
+                MergeTypeIds<
                     type_id_sequence<id<0>>,
                     type_id_sequence<id<1>>
                 >::type,
                 type_id_sequence<id<0>,id<1>>
             >::value,
-            "merge_type_ids error"
+            "MergeTypeIds error"
             );
     static_assert(
             cuda::std::is_same<
-                merge_type_ids<
+                MergeTypeIds<
                     type_id_sequence<id<0>,id<2>,id<1>>,
                     type_id_sequence<id<1>,id<3>,id<0>>
                 >::type,
                 type_id_sequence<id<2>,id<1>,id<3>,id<0>>
             >::value,
-            "merge_type_ids error"
+            "MergeTypeIds error"
             );
 
     
     /* merge two AAs */
-    template <template<typename, type_id_t...> class, typename, typename>
+    template <template<typename, typename...> class, typename, typename>
     struct TypeFromSequence {};
 
-    template <template<typename, type_id_t...> class cls, typename T, type_id_t... Is>
+    template <template<typename, typename...> class cls, typename T, typename... Is>
     struct TypeFromSequence<cls, T, type_id_sequence<Is...>> {
         using type = cls<T,Is...>;
     };
@@ -252,12 +267,12 @@ namespace detail {
     template <typename, typename>
     struct MergedType {};
 
-    template <template<typename, type_id_t...> class cls, typename T, type_id_t... Is, type_id_t... Js>
+    template <template<typename, typename...> class cls, typename T, typename... Is, typename... Js>
     struct MergedType<cls<T,Is...>, cls<T,Js...>> {
         using type = typename TypeFromSequence<
             cls,
             T,
-            typename merge_type_ids<
+            typename MergeTypeIds<
                 type_id_sequence<Is...>,
                 type_id_sequence<Js...>
             >::type
@@ -269,34 +284,34 @@ namespace detail {
 
         
     /* compute new symbol type ids */
+    template <typename...> struct OpId {};
+
     template <typename val, int opcode>
-    static constexpr type_id_t unop_type_id = type_id<cuda::std::tuple<val,integer_sequence<opcode>>>;
+    using unop_type_id = OpId<val,id<opcode>>;
     
     template <typename lhs, typename rhs, int opcode>
-    static constexpr type_id_t binop_type_id = type_id<cuda::std::tuple<lhs,rhs,integer_sequence<opcode>>>;
+    using binop_type_id = OpId<lhs,rhs,id<opcode>>;
 
 
     /* insert new symbol into an existing AA type */
-    template <typename, type_id_t>
+    template <typename, typename>
     struct InsertNewSymbolType {};
 
-    template <template<typename, type_id_t...> class cls, typename T, type_id_t... Is, type_id_t new_symbol>
+    template <template<typename, typename...> class cls, typename T, typename... Is, typename new_symbol>
     struct InsertNewSymbolType<cls<T,Is...>, new_symbol> {
-        static_assert(!is_in_sequence<new_symbol, Is...>::value, "Symbol is already contained in base type.");
+        static_assert(!id_in_sequence<new_symbol, Is...>, "Symbol is already contained in base type.");
         using type = typename TypeFromSequence<
             cls,
             T,
-            typename merge_type_ids<
+            typename MergeTypeIds<
                 type_id_sequence<Is...>,
                 type_id_sequence<new_symbol>
             >::type
         >::type;
     };
     
-    template <typename cls, type_id_t new_symbol>
+    template <typename cls, typename new_symbol>
     using insert_new_symbol_t = typename InsertNewSymbolType<cls, new_symbol>::type;
-    
-    
 
 } /* end of namespace detail */
 } /* end of namespace cusvna */
