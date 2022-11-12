@@ -21,7 +21,7 @@ int main() {
     
     for (I i = 0; i < nintervals; ++i) {
         Interval u(xmin + i*dx, xmin + (i+1)*dx);
-        auto x = aa_from_interval(u);
+        auto x = new_aa_from_interval(u);
         auto y = f(x);
         
         interval u_(xmin + i*dx, xmin + (i+1)*dx);

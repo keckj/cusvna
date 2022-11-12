@@ -7,9 +7,9 @@ int main() {
     Interval u(-2,2); interval u_(-2,2);
     Interval v(-1,1); interval v_(-1,1);
 
-    auto x = aa_from_interval(u); AAF x_(u_);
-    auto r = aa_from_interval(v); AAF r_(v_);
-    auto s = aa_from_interval(v); AAF s_(v_);
+    auto x = new_aa_from_interval(u); AAF x_(u_);
+    auto r = new_aa_from_interval(v); AAF r_(v_);
+    auto s = new_aa_from_interval(v); AAF s_(v_);
 
     assert_equal(x, x_);
     assert_equal(r, r_);

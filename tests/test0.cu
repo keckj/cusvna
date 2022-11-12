@@ -7,10 +7,10 @@ int main() {
     Interval u(-2,2); interval u_(-2,2);
     Interval v(0.5,1); interval v_(0.5,1);
 
-    auto x = aa_from_interval(u); AAF x_(u_);
-    auto y = aa_from_interval(v); AAF y_(v_);
-    auto z = aa_from_interval(v); AAF z_(v_);
-    auto w = aa_from_interval(v); AAF w_(v_);
+    auto x = new_aa_from_interval(u); AAF x_(u_);
+    auto y = new_aa_from_interval(v); AAF y_(v_);
+    auto z = new_aa_from_interval(v); AAF z_(v_);
+    auto w = new_aa_from_interval(v); AAF w_(v_);
 
     assert_equal(x, x_, "x");
     assert_equal(y, y_, "y");

@@ -18,11 +18,11 @@ namespace detail {
     
     /* generate unique type_id from a typename, type_id_t are just equal-comparable so no sorting is possible */
     using type_id_t = void(*)();
-
+    
     template <typename T>
     struct IdGen {
         __host__ __device__ static constexpr type_id_t get_unique_id() {
-            return IdGen::dummy;
+            return &IdGen::dummy;
         }
         __host__ __device__ static void dummy() {};
     };
@@ -42,10 +42,23 @@ namespace detail {
     using type_id_sequence = cuda::std::integer_sequence<type_id_t, Is...>;
 
     
+    /* compare type_id values */
+    template <type_id_t T0, type_id_t T1>
+    using Same = cuda::std::is_same<type_id_sequence<T0>, type_id_sequence<T1>>;
+
+    static_assert(Same<id<0>,id<0>>::value);
+    static_assert(Same<id<1>,id<1>>::value);
+    static_assert(!Same<id<0>,id<1>>::value);
+    static_assert(!Same<id<1>,id<0>>::value);
+    static_assert(!Same<type_id<float>,type_id<int>>::value);
+    static_assert(!Same<type_id<float>,id<0>>::value);
+    static_assert(!Same<id<0>,type_id<int>>::value);
+
+
     /* is in sequence */
     template <type_id_t I0, type_id_t... Is>
     struct is_in_sequence {
-        static constexpr bool value = (cuda::std::is_same<type_id_sequence<I0>, type_id_sequence<Is>>::value || ...);
+        static constexpr bool value = (Same<I0,Is>::value || ...);
     };
 
     static_assert(is_in_sequence<id<0>,id<0>>::value, "is_in_sequence error");
@@ -60,13 +73,16 @@ namespace detail {
     /* offset in sequence */
     template <type_id_t, typename, int K=0>
     struct offset_in_sequence { 
-        static constexpr int value = -1;
     };
 
     template <type_id_t I, type_id_t I0, type_id_t... Is, int K>
     struct offset_in_sequence<I, type_id_sequence<I0,Is...>, K>{
-        static constexpr int value = (cuda::std::is_same<type_id_sequence<I>,type_id_sequence<I0>>::value ? K : 
-                                      offset_in_sequence<I,type_id_sequence<Is...>,K+1>::value); 
+        static constexpr int value = (Same<I,I0>::value ? K : offset_in_sequence<I,type_id_sequence<Is...>,K+1>::value); 
+    };
+    
+    template <type_id_t I, int K>
+    struct offset_in_sequence<I, type_id_sequence<>, K>{
+        static constexpr int value = -1;
     };
 
     static_assert(offset_in_sequence<id<0>,type_id_sequence<id<0>>>::value == 0, "offset_in_sequence error");

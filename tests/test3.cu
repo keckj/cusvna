@@ -23,13 +23,13 @@ int main() {
     for (I i = 0; i < nintervals; ++i) {
         Interval u(ymin + i*dy, ymin + (i+1)*dy);
         interval u_(ymin + i*dy, ymin + (i+1)*dy);
-        auto y = aa_from_interval(u);
+        auto y = new_aa_from_interval(u);
         AAF y_(u_);
 
         for (I j = 0; j < nintervals; ++j) {
             Interval v(xmin + j*dx, xmin + (j+1)*dx);
             interval v_(xmin + j*dx, xmin + (j+1)*dx);
-            auto x = aa_from_interval(v);
+            auto x = new_aa_from_interval(v);
             AAF x_(v_);
 
             auto z = f(x,y);
