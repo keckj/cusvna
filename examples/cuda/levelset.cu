@@ -202,7 +202,7 @@ extern "C" __global__ void __raygen__rg()
            ray_origin,
            ray_direction,
            0.00f,  // tmin
-           10.0f,  // tmax
+           100.0f, // tmax
            &payload_rgb );
 
     params.image[idx.y * params.image_width + idx.x] = make_color( payload_rgb );

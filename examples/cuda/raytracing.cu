@@ -119,7 +119,6 @@ extern "C" __global__ void __intersection__levelset() {
         const auto xv = AA::from_interval<0>(Interval(c.x - v.x, c.x + v.x));
         const auto yv = AA::from_interval<1>(Interval(c.y - v.y, c.y + v.y));
         const auto zv = AA::from_interval<2>(Interval(c.z - v.z, c.z + v.z));
-        xv.print();
 
         const auto w = f(xv, yv, zv, origin, radius);
 

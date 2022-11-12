@@ -165,8 +165,8 @@ def scroll_callback(window, xscroll, yscroll):
 def init_launch_params(state):
     state.params.frame_buffer = 0
     state.params.subframe_index = 0
-    state.params.ray_marching_steps = 100
-    state.params.ray_marching_threshold = 1e-2
+    state.params.ray_marching_steps = 200
+    state.params.ray_marching_threshold = 1e-3
     state.params.rendering_mode = 0
 
 def handle_camera_update(state):
