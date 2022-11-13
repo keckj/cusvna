@@ -19,7 +19,7 @@ if not os.path.isdir(sutil_directory):
 
 sys.path.insert(0, sutil_directory)
 
-from sutil.gui import init_ui, display_stats
+from sutil.gui import init_ui, display_stats, display_text
 from sutil.gl_display import GLDisplay
 from sutil.trackball import Trackball, TrackballViewMode
 from sutil.cuda_output_buffer import CudaOutputBuffer, CudaOutputBufferType, BufferImageFormat
@@ -153,6 +153,8 @@ def key_callback(window, key, scancode, action, mods):
     if action is glfw.PRESS:
         if key in {glfw.KEY_Q, glfw.KEY_ESCAPE}:
             glfw.set_window_should_close(window, True)
+        if key in {glfw.KEY_ENTER}:
+            state.params.rendering_mode = (int(state.params.rendering_mode) + 1)%2
 
 def scroll_callback(window, xscroll, yscroll):
     state = glfw.get_window_user_pointer(window)
@@ -312,6 +314,8 @@ def create_gas(state):
 # Main
 #------------------------------------------------------------------------------
 if __name__ == '__main__':
+    cusvna_logger.info("Setting up OptiX scene...")
+
     state = DynamicGeometryState()
     state.params.width = 1024
     state.params.height = 768
@@ -350,6 +354,8 @@ if __name__ == '__main__':
     state_update_time = 0.0
     render_time = 0.0
     display_time = 0.0
+
+    cusvna_logger.info("Press ENTER to alternate between rendering modes (normals and raymarching iterations).")
 
     tstart = glfw.get_time()
 

@@ -114,6 +114,8 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
 
 
 if __name__ == "__main__":
+    cusvna_logger.info("Setting up OptiX scene...")
+
     logger = ox.Logger(cusvna_logger)
     ctx = ox.DeviceContext(validation_mode=True, log_callback_function=logger, log_callback_level=4)
 
@@ -131,8 +133,9 @@ if __name__ == "__main__":
     program_grps = create_program_groups(ctx, module)
     pipeline = create_pipeline(ctx, program_grps, pipeline_options)
     sbt = create_sbt(program_grps, centers, radii)
-    img = launch_pipeline(pipeline, sbt, gas)
 
+    cusvna_logger.info("Rendering image...")
+    img = launch_pipeline(pipeline, sbt, gas)
     img = img.reshape(img_size[1], img_size[0], 4)
     img = ImageOps.flip(Image.fromarray(img, 'RGBA'))
     img.show()
