@@ -27,7 +27,7 @@ namespace cusvna {
         __host__ __device__ T radius() const { return (b-a)/T(2); };
         __host__ __device__ T midpoint() const { return (a+b)/T(2); };
         __host__ __device__ Sign sign() const {
-            return (b<=T(0) ? Sign::NEGATIVE : (a>=T(0) ? Sign::POSITIVE : Sign::UNKNOWN));
+            return (a>b || a!=a || b!=b ? Sign::UNKNOWN : (b<=T(0) ? Sign::NEGATIVE : (a>=T(0) ? Sign::POSITIVE : Sign::UNKNOWN)));
         }
     };
 
