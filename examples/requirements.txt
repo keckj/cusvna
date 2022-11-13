@@ -6,4 +6,5 @@ open3d
 skimage
 glfw
 imgui
+screeninfo
 git+https://github.com/mortacious/python-optix

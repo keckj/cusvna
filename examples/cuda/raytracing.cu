@@ -38,30 +38,32 @@ extern "C" {
 __constant__ Params params;
 }
 
-__device__ float3 df(const float3& p, const float3& origin, const float radius) {
-    const float3 dx = p - origin;
-    return dx / norm3df(dx.x, dx.y, dx.z);
-}
-
-#ifdef SDF
-__device__ float f(const float3& p, const float3& origin, const float radius) {
-    const float3 dx = p - origin;
-    return norm3df(dx.x, dx.y, dx.z) - radius;
-}
-#else
 template <typename X, typename Y, typename Z>
-__device__ auto f(const X& x, const Y& y, const Z& z,
+__device__ auto f(const X& x0, const Y& y0, const Z& z0,
                    const float3& origin, const float radius) {
-    const auto dx(x-origin.x);
-    const auto dy(y-origin.y);
-    const auto dz(z-origin.z);
-    return dx*dx + dy*dy + dz*dz - radius*radius;
+    const auto x((x0-origin.x)/(radius));
+    const auto y((y0-origin.y)/(radius));
+    const auto z((z0-origin.z)/(radius));
+    const auto xx = x*x;
+    const auto yy = y*y;
+    const auto zz = z*z;
+    const float c = 0.85f*0.85f;
+    const float o = 1.00f;
+    return (  ((xx + yy - c)*(xx + yy - c) + (zz - o)*(zz - o))
+            * ((yy + zz - c)*(yy + zz - c) + (xx - o)*(xx - o))
+            * ((zz + xx - c)*(zz + xx - c) + (yy - o)*(yy - o)) - 0.01f);
 }
 
 __device__ float f(const float3& p, const float3& origin, const float radius) {
     return f(p.x, p.y, p.z, origin, radius);
 }
-#endif
+
+__device__ float3 df(const float3& p, const float3& origin, const float radius) {
+    /* fake normal, just used for shading */
+    const float3 dx = p - origin;
+    return dx / norm3df(dx.x, dx.y, dx.z);
+}
+
 
 extern "C" __global__ void __intersection__levelset() {
     const levelset::LevelsetHitGroupData* hit_group_data = \
@@ -77,20 +79,6 @@ extern "C" __global__ void __intersection__levelset() {
     const float3 origin = hit_group_data->centers[primitive_index];
     const float  radius = hit_group_data->radii[primitive_index];
    
-#ifdef SDF
-    /* Ray marching using signed distance field with SDF sphere tracing */
-    float t = ray_tmin;
-    for(int i = 0; i < params.ray_marching_steps && t <= ray_tmax; ++i) {
-        const float3 p = ray_orig + t*ray_dir;
-        const float d = f(p, origin, radius);
-        if (abs(d) < params.ray_marching_threshold) {
-            const float3 normal = df(p, origin, radius);
-            optixReportIntersection(t, 0, float3_as_ints(normal), i);
-            break;
-        }
-        t += d;
-    }
-#else
     /* Ray marching using general interval tracing */
     using T = float;
     using AA = cusvna::AA<T>;
@@ -131,7 +119,6 @@ extern "C" __global__ void __intersection__levelset() {
             sigma *= np;
         }
     }
-#endif
 }
 
 static __forceinline__ __device__ void computeRay( uint3 idx, uint3 dim, float3& origin, float3& direction )
@@ -215,7 +202,7 @@ extern "C" __global__ void __raygen__rg()
            ray_origin,
            ray_direction,
            0.00f,  // tmin
-           10.0f,  // tmax
+           100.0f,  // tmax
            &payload_rgb );
 
     params.image[idx.y * params.image_width + idx.x] = make_color( payload_rgb );
