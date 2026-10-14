@@ -17,6 +17,23 @@ LD reciprocal(const LD x)    { return LD(1) / x; }
 LD sqr(const LD x)           { return x * x; }
 LD cot(const LD x)           { return std::cos(x) / std::sin(x); }
 LD positive_part(const LD x) { return (x > 0 ? x : LD(0)); }
+LD rsqrt(const LD x)         { return LD(1) / std::sqrt(x); }
+LD rcbrt(const LD x)         { return LD(1) / std::cbrt(x); }
+LD exp10(const LD x)         { return std::pow(LD(10), x); }
+LD normcdf(const LD x)       { return std::erfc(-x / std::sqrt(LD(2))) / 2; }
+LD reduce2(const LD x)       { return x - 2 * std::nearbyint(x / 2); }   /* exact */
+LD sinpi(const LD x)         { return std::sin(3.14159265358979323846264338327950288L * reduce2(x)); }
+LD cospi(const LD x)         { return std::cos(3.14159265358979323846264338327950288L * reduce2(x)); }
+LD min(const LD x, const LD y) { return std::fmin(x, y); }
+LD max(const LD x, const LD y) { return std::fmax(x, y); }
+LD clamp(const LD x, const LD lo, const LD hi) { return min(max(x, lo), hi); }
+LD norm3d(const LD x, const LD y, const LD z) { return std::hypot(x, y, z); }
+LD rhypot(const LD x, const LD y) { return LD(1) / std::hypot(x, y); }
+LD rnorm3d(const LD x, const LD y, const LD z) { return LD(1) / std::hypot(x, y, z); }
+LD lerp(const LD a, const LD b, const LD t) { return a + t*(b - a); }
+LD smoothstep(const LD e0, const LD e1, const LD x) { const LD t = clamp((x - e0)/(e1 - e0), 0, 1); return t*t*(3 - 2*t); }
+LD smooth_min(const LD a, const LD b, const LD k) { const LD h = max(k - std::fabs(a - b), 0) / k; return min(a, b) - h*h*k/4; }
+LD smooth_max(const LD a, const LD b, const LD k) { return -smooth_min(-a, -b, k); }
 
 static int failures = 0;
 static int checks = 0;
@@ -83,6 +100,13 @@ void check_tight(const std::string& name, F&& f, const T x0, const int max_ulps)
     const LD ref = f(LD(x0), LD(0), T(0));
     const LD ulp = std::numeric_limits<T>::epsilon() * std::fmax(std::fabs(ref), LD(std::numeric_limits<T>::min()));
     const LD width = LD(r.b) - LD(r.a);
+    const LD tol = std::ldexp(std::fmax(std::fabs(ref), LD(1)), -60);
+    if (!(LD(r.a) <= ref + tol && ref - tol <= LD(r.b))) {
+        std::cerr.precision(20);
+        std::cerr << "  " << type_name<T>() << " " << name << "(" << x0 << ") = " << ref << " not in [" << r.a << ", " << r.b << "]" << std::endl;
+        fail(std::string(type_name<T>()) + " " + name + ": point not enclosed");
+        return;
+    }
     if (!(width <= max_ulps * ulp)) {
         std::cerr.precision(20);
         std::cerr << "  " << type_name<T>() << " " << name << "(" << x0 << ") = [" << r.a << ", " << r.b << "] is "
@@ -161,6 +185,28 @@ void run() {
     check_unary<T>("atanh",      [](auto x, auto t) { return atanh(x); }, atanh_ok, 32);
     check_unary<T>("abs",        [](auto x, auto t) { return abs(x); }, always, 0);
     check_unary<T>("positive_part", [](auto x, auto t) { return positive_part(x); }, always, 0);
+    
+    auto arc_ok = [](LD a, LD b) { return b >= -1 && a <= 1; };
+    auto log1p_ok = [](LD a, LD b) { return a > -1; };
+    auto exp2_ok = [&](LD a, LD b) { return b < max_exp / std::log(LD(2)); };
+    auto exp10_ok = [&](LD a, LD b) { return b < max_exp / std::log(LD(10)); };
+    check_unary<T>("rsqrt",      [](auto x, auto t) { return rsqrt(x); }, positive, 16);
+    check_unary<T>("exp2",       [](auto x, auto t) { return exp2(x); }, exp2_ok, 24);
+    check_unary<T>("exp10",      [](auto x, auto t) { return exp10(x); }, exp10_ok, 72);
+    check_unary<T>("expm1",      [](auto x, auto t) { return expm1(x); }, exp_ok, 24);
+    check_unary<T>("log2",       [](auto x, auto t) { return log2(x); }, positive, 24);
+    check_unary<T>("log10",      [](auto x, auto t) { return log10(x); }, positive, 24);
+    check_unary<T>("log1p",      [](auto x, auto t) { return log1p(x); }, log1p_ok, 24);
+    check_unary<T>("cbrt",       [](auto x, auto t) { return cbrt(x); }, always, 24);
+    check_unary<T>("rcbrt",      [](auto x, auto t) { return rcbrt(x); }, nonzero, 24);
+    check_unary<T>("atan",       [](auto x, auto t) { return atan(x); }, always, 32);
+    check_unary<T>("asin",       [](auto x, auto t) { return asin(x); }, arc_ok, 32);
+    check_unary<T>("acos",       [](auto x, auto t) { return acos(x); }, arc_ok, 32);
+    check_unary<T>("erf",        [](auto x, auto t) { return erf(x); }, always, 32);
+    check_unary<T>("erfc",       [](auto x, auto t) { return erfc(x); }, always, 48);
+    check_unary<T>("normcdf",    [](auto x, auto t) { return normcdf(x); }, always, 64);
+    check_unary<T>("sinpi",      [](auto x, auto t) { return sinpi(x); }, always, 24);
+    check_unary<T>("cospi",      [](auto x, auto t) { return cospi(x); }, always, 24);
 
     /* composed expressions */
     const I U(-1, 1), V(0, 1), W(1, 2);
@@ -184,6 +230,61 @@ void run() {
             using S = decltype(t);
             auto xy = x*y;
             return x*x + y*y + xy - xy*xy/S(2) - S(1)/S(4); }, I(-2, -1), I(1, 2));
+
+    /* composite functions */
+    check("min(x, y)",          [](auto x, auto y, auto t) { return min(x, y); }, U, V);
+    check("max(x, y)",          [](auto x, auto y, auto t) { return max(x, y); }, U, V);
+    check("min(x, y) disjoint", [](auto x, auto y, auto t) { return min(x, y); }, I(-2, -1), V);
+    check("max(x, 0.25)",       [](auto x, auto y, auto t) { using S = decltype(t); return max(x, S(0.25)); }, U, V);
+    check("min(0.25, x)",       [](auto x, auto y, auto t) { using S = decltype(t); return min(S(0.25), x); }, U, V);
+    check("fmin/fmax",          [](auto x, auto y, auto t) { return fmin(x, y) * fmax(x, y); }, U, V);
+    check("clamp(x, -0.5, 0.5)",[](auto x, auto y, auto t) { using S = decltype(t); return clamp(x, S(-0.5), S(0.5)); }, U, V);
+    check("clamp(x, y-1, y)",   [](auto x, auto y, auto t) { using S = decltype(t); return clamp(x, y - S(1), y); }, U, V);
+    check("hypot(x, y)",        [](auto x, auto y, auto t) { return hypot(x, y); }, U, W);
+    check("hypot(x, y) at 0",   [](auto x, auto y, auto t) { return hypot(x, y); }, U, U);
+    check("norm3d(x, y, x*y)",  [](auto x, auto y, auto t) { return norm3d(x, y, x*y); }, U, W);
+    check("hypot(x, y, x-y)",   [](auto x, auto y, auto t) { return hypot(x, y, x - y); }, U, W);
+    check("rhypot(x, y)",       [](auto x, auto y, auto t) { return rhypot(x, y); }, U, W);
+    check("rnorm3d(x, y, y)",   [](auto x, auto y, auto t) { return rnorm3d(x, y, y); }, U, W);
+    check("fma(x, y, x)",       [](auto x, auto y, auto t) { return fma(x, y, x); }, U, W);
+    check("lerp(x, y, 0.3)",    [](auto x, auto y, auto t) { using S = decltype(t); return lerp(x, y, S(0.3)); }, U, W);
+    check("lerp(0, 1, x*y)",    [](auto x, auto y, auto t) { using S = decltype(t); return lerp(S(0), S(1), x*y); }, U, V);
+    check("smoothstep",         [](auto x, auto y, auto t) { using S = decltype(t); return smoothstep(S(-0.5), S(0.5), x); }, U, V);
+    check("smoothstep inside",  [](auto x, auto y, auto t) { using S = decltype(t); return smoothstep(S(-2), S(2), x); }, U, V);
+    check("smooth_min",         [](auto x, auto y, auto t) { using S = decltype(t); return smooth_min(x, y, S(0.5)); }, U, V);
+    check("smooth_max",         [](auto x, auto y, auto t) { using S = decltype(t); return smooth_max(x, y, S(0.25)); }, U, V);
+    check("sdf union of disks", [](auto x, auto y, auto t) { 
+            using S = decltype(t);
+            const auto d0 = hypot(x - S(0.5), y) - S(0.5);
+            const auto d1 = hypot(x + S(0.5), y - S(0.25)) - S(0.4);
+            return min(d0, d1); }, U, U);
+    check("asin(x/2) + acos(y)",[](auto x, auto y, auto t) { using S = decltype(t); return asin(x*S(0.5)) + acos(y); }, U, V);
+    check("atan(x*y) * erf(x)", [](auto x, auto y, auto t) { return atan(x*y) * erf(x); }, U, W);
+    check("sinpi(x)*cospi(y)",  [](auto x, auto y, auto t) { return sinpi(x) * cospi(y); }, U, V);
+    check("log1p(expm1(x))",    [](auto x, auto y, auto t) { return log1p(expm1(x)); }, V, V);
+    check("cbrt(x*y) - rcbrt(y)",[](auto x, auto y, auto t) { return cbrt(x*y) - rcbrt(y); }, U, W);
+    
+    {
+        /* min(x, y) + max(x, y) cancels to x + y */
+        const auto x = cusvna::AA<T>::template from_interval<0>(U);
+        const auto y = cusvna::AA<T>::template from_interval<1>(V);
+        const auto d = (min(x, y) + max(x, y)) - (x + y);
+        ++checks;
+        if (!(d.affine_radius() == T(0))) { fail(std::string(type_name<T>()) + " min(x,y) + max(x,y) - (x+y) does not cancel"); }
+        
+        /* predicates */
+        const auto z = cusvna::AA<T>::template from_interval<2>(I(2, 3));
+        checks += 8;
+        if (!certainly_lt(x, z) || !certainly_le(x, z) || certainly_lt(x, y) || certainly_ge(x, y)) { 
+            fail(std::string(type_name<T>()) + " certainly_lt/le/ge"); 
+        }
+        if (!certainly_gt(z, T(1)) || !certainly_ge(T(4), z) || certainly_gt(z, T(2.5))) {
+            fail(std::string(type_name<T>()) + " certainly_gt/ge with scalars");
+        }
+        if (!possibly_zero(x) || possibly_zero(z)) {
+            fail(std::string(type_name<T>()) + " possibly_zero");
+        }
+    }
 
     /* rounding errors */
     /* x + big is inexact in T but exact in long double */

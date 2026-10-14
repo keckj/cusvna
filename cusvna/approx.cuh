@@ -159,11 +159,12 @@ namespace detail {
     }
 
     /* Enclosure of g over X for trigonometric functions whose special points (inflection points
-       and poles) are multiples of pi/2. Returns false if X contains a pole or is too large. */
+       and poles) are multiples of a half period (pi/2, or 1/2 for sinpi and cospi).
+       Returns false if X contains a pole or is too large. */
     template <typename Fn, typename T>
     __host__ __device__ inline bool residual_periodic(const Fn& fn, const T alpha, const R<T>& X, R<T>& g) {
-        const R<T> half_pi(mul_rn(fp<T>::pi_lo(), T(0.5)), mul_rn(fp<T>::pi_hi(), T(0.5)));
-        const T mf = ::floor(X.a / half_pi.a) - T(1);
+        const R<T> half_period = fn.template half_period<T>();
+        const T mf = ::floor(X.a / half_period.a) - T(1);
         if (!(::fabs(mf) + T(16) < max_exact_integer<T>())) {
             return false;
         }
@@ -173,7 +174,7 @@ namespace detail {
         T cursor = X.a;
         for (int i = 0; i < 8; ++i) {
             const long long m = m0 + i;
-            const R<T> S = point(T(m)) * half_pi;
+            const R<T> S = point(T(m)) * half_period;
             if (i == 0) {
                 if (!(S.b < X.a)) { return false; }
                 continue;
@@ -295,6 +296,11 @@ namespace detail {
         static constexpr int INFLECTION = 1;
         static constexpr int POLE = 2;
         static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ R<T> half_period() const { 
+            return R<T>(mul_rn(fp<T>::pi_lo(), T(0.5)), mul_rn(fp<T>::pi_hi(), T(0.5)));
+        }
+        /* upper bound of |f'| for bounded functions */
+        template <typename T> __host__ __device__ T lipschitz() const { return T(1); }
     };
 
     struct sin_fn : trigo_fn {
@@ -531,16 +537,17 @@ namespace detail {
     __host__ __device__ inline Approx<T> approx_bounded_trigo(const R<T>& X, const T err) {
         /* the whole range [-1,1], the input error does not matter */
         const Approx<T> full{T(0), T(0), T(1), T(0), false};
-        if (!is_finite(X) || !(sub_up(add_up(X.b, err), sub_down(X.a, err)) < mul_rn(T(2), fp<T>::pi_lo()))) {
+        const Fn fn;
+        const T period = mul_rn(T(4), fn.template half_period<T>().a);
+        if (!is_finite(X) || !(sub_up(add_up(X.b, err), sub_down(X.a, err)) < period)) {
             return full;
         }
-        const Fn fn;
         const T alpha = secant_slope(fn, X);
         R<T> g;
         if (!residual_periodic(fn, alpha, X, g)) {
             return full;
         }
-        return from_residual(alpha, g, propagate(T(1), err));
+        return from_residual(alpha, g, propagate(fn.template lipschitz<T>(), err));
     }
 
     template <typename T>
@@ -667,6 +674,379 @@ namespace detail {
 
     template <typename T>
     __host__ __device__ inline Approx<T> approx_positive_part(const R<T>& X, const T err) { return approx_kink(X, err, T(0), T(1)); }
+
+
+    /*** additional functions ***/
+
+    /* enclosure of a mathematical constant from its correctly rounded value */
+    template <typename T>
+    __host__ __device__ inline R<T> constant(const T c) { return enclose(c, 1); }
+    
+    template <typename T> __host__ __device__ inline R<T> ln2()           { return constant(T(0.693147180559945309417232121458176568)); }
+    template <typename T> __host__ __device__ inline R<T> ln10()          { return constant(T(2.30258509299404568401799145468436421)); }
+    template <typename T> __host__ __device__ inline R<T> two_over_sqrtpi(){ return constant(T(1.12837916709551257389615890312154517)); }
+    template <typename T> __host__ __device__ inline R<T> inv_sqrt2()     { return constant(T(0.707106781186547524400844362104849039)); }
+    template <typename T> __host__ __device__ inline R<T> inv_sqrt2pi()   { return constant(T(0.398942280401432677939946059934381868)); }
+    template <typename T> __host__ __device__ inline R<T> pi()            { return R<T>(fp<T>::pi_lo(), fp<T>::pi_hi()); }
+
+    /* exp(-x^2) */
+    template <typename T>
+    __host__ __device__ inline R<T> gaussian(const R<T>& x) {
+        const R<T> m = -sqr(x);
+        return R<T>(fmax(down(T(::exp(m.a)), exp_fn::ulps), T(0)), up(T(::exp(m.b)), exp_fn::ulps));
+    }
+
+    struct rsqrt_fn {
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return T(1) / ::sqrt(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return -T(0.5) / (x * ::sqrt(x)); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return point(T(1)) / R<T>(sqrt_down(x), sqrt_up(x)); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return -(point(T(0.5)) * F(x) / point(x)); }
+    };
+    
+    struct exp2_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::exp2(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(0.693147180559945309417) * ::exp2(x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::exp2(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return ln2<T>() * F(x); }
+    };
+    
+    struct exp10_fn {
+        static constexpr int ulps = 16;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ static T exp10(const T x) {
+#ifdef __CUDA_ARCH__
+            return ::exp10(x);
+#else
+            return ::pow(T(10), x);
+#endif
+        }
+        template <typename T> __host__ __device__ T f(const T x)  const { return exp10(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(2.30258509299404568402) * exp10(x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(exp10(x), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return ln10<T>() * F(x); }
+    };
+    
+    struct expm1_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::expm1(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return ::exp(x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::expm1(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return exp_fn().F(x); }
+    };
+    
+    struct log2_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::log2(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(1.44269504088896340736) / x; }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::log2(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / (point(x) * ln2<T>()); }
+    };
+    
+    struct log10_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::log10(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(0.434294481903251827651) / x; }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::log10(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / (point(x) * ln10<T>()); }
+    };
+    
+    struct log1p_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::log1p(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(1) / (T(1) + x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::log1p(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / (point(T(1)) + point(x)); }
+    };
+    
+    struct cbrt_fn {
+        static constexpr int ulps = 4;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::cbrt(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { const T c = ::cbrt(x); return T(1) / (T(3) * c * c); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::cbrt(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / (point(T(3)) * sqr(F(x))); }
+    };
+    
+    struct rcbrt_fn {
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return T(1) / ::cbrt(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return -T(1) / (T(3) * x * ::cbrt(x)); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return point(T(1)) / cbrt_fn().F(x); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return -(F(x) / (point(T(3)) * point(x))); }
+    };
+    
+    struct atan_fn {
+        static constexpr int ulps = 6;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::atan(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(1) / (T(1) + x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::atan(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / (point(T(1)) + sqr(point(x))); }
+    };
+    
+    struct asin_fn {
+        static constexpr int ulps = 6;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::asin(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(1) / ::sqrt(T(1) - x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::asin(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return point(T(1)) / sqrt(point(T(1)) - sqr(point(x))); }
+    };
+    
+    struct acos_fn {
+        static constexpr int ulps = 6;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::acos(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return -T(1) / ::sqrt(T(1) - x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::acos(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return -(point(T(1)) / sqrt(point(T(1)) - sqr(point(x)))); }
+    };
+    
+    struct erf_fn {
+        static constexpr int ulps = 6;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::erf(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(1.12837916709551257390) * ::exp(-x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::erf(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return two_over_sqrtpi<T>() * gaussian(point(x)); }
+    };
+    
+    struct erfc_fn {
+        static constexpr int ulps = 10;
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return ::erfc(x); }
+        template <typename T> __host__ __device__ T df(const T x) const { return -T(1.12837916709551257390) * ::exp(-x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return enclose(T(::erfc(x)), ulps); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return -(two_over_sqrtpi<T>() * gaussian(point(x))); }
+    };
+    
+    /* standard normal cumulative distribution function normcdf(x) = erfc(-x/sqrt(2))/2 */
+    struct normcdf_fn {
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x)  const { return T(0.5) * ::erfc(-x * T(0.707106781186547524401)); }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(0.398942280401432677940) * ::exp(-T(0.5)*x*x); }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { 
+            /* erfc is decreasing */
+            const R<T> t = -(point(x) * inv_sqrt2<T>());
+            const R<T> e(fmax(down(T(::erfc(t.b)), erfc_fn::ulps), T(0)), up(T(::erfc(t.a)), erfc_fn::ulps));
+            return point(T(0.5)) * e;
+        }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return inv_sqrt2pi<T>() * gaussian(point(x) * inv_sqrt2<T>()); }
+    };
+    
+    /* sin(pi*r) and cos(pi*r) for 0 <= r <= 1/4, where pi*r <= pi/4 and both functions are monotonic */
+    template <typename T>
+    __host__ __device__ inline R<T> sinpi_quarter(const T r) {
+        if (r == T(0)) { return point(T(0)); }
+        const R<T> A = point(r) * pi<T>();
+        return R<T>(fmax(down(T(::sin(A.a)), sin_fn::ulps), T(0)), fmin(up(T(::sin(A.b)), sin_fn::ulps), T(1)));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline R<T> cospi_quarter(const T r) {
+        if (r == T(0)) { return point(T(1)); }
+        const R<T> A = point(r) * pi<T>();
+        return R<T>(fmax(down(T(::cos(A.b)), cos_fn::ulps), T(0)), fmin(up(T(::cos(A.a)), cos_fn::ulps), T(1)));
+    }
+    
+    /* x - n where n is the nearest even integer, the result in [-1,1] is exact */
+    template <typename T>
+    __host__ __device__ inline T reduce_period2(const T x) {
+        if (!(::fabs(x) < max_exact_integer<T>())) { return T(0); }  /* even integer */
+        return x - T(2) * ::rint(x * T(0.5));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline R<T> sinpi_enclosure(const T x) {
+        T r = reduce_period2(x);
+        const bool negative = (r < T(0));
+        r = ::fabs(r);
+        if (r > T(0.5)) { r = T(1) - r; }   /* sinpi(r) = sinpi(1-r), exact */
+        const R<T> s = (r <= T(0.25) ? sinpi_quarter(r) : cospi_quarter(T(0.5) - r));
+        return (negative ? -s : s);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline R<T> cospi_enclosure(const T x) {
+        T r = ::fabs(reduce_period2(x));
+        bool negative = false;
+        if (r > T(0.5)) { r = T(1) - r; negative = true; }   /* cospi(r) = -cospi(1-r), exact */
+        const R<T> c = (r <= T(0.25) ? cospi_quarter(r) : sinpi_quarter(T(0.5) - r));
+        return (negative ? -c : c);
+    }
+    
+    struct sinpi_fn : trigo_fn {
+        template <typename T> __host__ __device__ T f(const T x)  const { return sinpi_enclosure(x).a; }
+        template <typename T> __host__ __device__ T df(const T x) const { return T(3.14159265358979323846) * cospi_enclosure(x).a; }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return sinpi_enclosure(x); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return pi<T>() * cospi_enclosure(x); }
+        template <typename T> __host__ __device__ R<T> half_period() const { return point(T(0.5)); }
+        template <typename T> __host__ __device__ T lipschitz() const { return fp<T>::pi_hi(); }
+        __host__ __device__ int kind(const long long m) const { return sin_fn().kind(m); }
+        __host__ __device__ int curvature(const long long m) const { return sin_fn().curvature(m); }
+    };
+    
+    struct cospi_fn : trigo_fn {
+        template <typename T> __host__ __device__ T f(const T x)  const { return cospi_enclosure(x).a; }
+        template <typename T> __host__ __device__ T df(const T x) const { return -T(3.14159265358979323846) * sinpi_enclosure(x).a; }
+        template <typename T> __host__ __device__ R<T> F(const T x)  const { return cospi_enclosure(x); }
+        template <typename T> __host__ __device__ R<T> DF(const T x) const { return -(pi<T>() * sinpi_enclosure(x)); }
+        template <typename T> __host__ __device__ R<T> half_period() const { return point(T(0.5)); }
+        template <typename T> __host__ __device__ T lipschitz() const { return fp<T>::pi_hi(); }
+        __host__ __device__ int kind(const long long m) const { return cos_fn().kind(m); }
+        __host__ __device__ int curvature(const long long m) const { return cos_fn().curvature(m); }
+    };
+
+    /* single convex (+1) or concave (-1) piece with a known lipschitz constant */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_piece(const Fn& fn, const R<T>& X, const int curvature, const T lip, const T err) {
+        const T alpha = secant_slope(fn, X);
+        const R<T> g = residual_piece(fn, alpha, X.a, X.b, curvature);
+        return from_residual(alpha, g, propagate(lip, err));
+    }
+    
+    /* convex (+1) or concave (-1) pieces on both sides of 0 */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_split0(const Fn& fn, const R<T>& X, const int curvature_neg, const int curvature_pos, 
+            const T prop) {
+        const T alpha = secant_slope(fn, X);
+        const R<T> g = residual_split0(fn, alpha, X, curvature_neg, curvature_pos);
+        return from_residual(alpha, g, prop);
+    }
+
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_rsqrt(const R<T>& X, const T err) {
+        if (!is_finite(X) || !(X.a > T(0))) { return Approx<T>::make_entire(); }
+        const rsqrt_fn fn;
+        const T xmin = sub_down(X.a, err);
+        const T lip = (xmin > T(0) ? ::fabs(fn.DF(xmin).a) : infinity<T>());
+        return approx_piece(fn, X, +1, lip, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_exp2(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const exp2_fn fn;
+        return approx_piece(fn, X, +1, fn.DF(add_up(X.b, err)).b, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_exp10(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const exp10_fn fn;
+        return approx_piece(fn, X, +1, fn.DF(add_up(X.b, err)).b, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_expm1(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const expm1_fn fn;
+        return approx_piece(fn, X, +1, fn.DF(add_up(X.b, err)).b, err);
+    }
+    
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_logarithm(const Fn& fn, const R<T>& X, const T err, const T lower) {
+        /* domain x > lower */
+        if (!is_finite(X) || !(X.a > lower)) { return Approx<T>::make_entire(); }
+        const T xmin = sub_down(X.a, err);
+        const T lip = (xmin > lower ? fn.DF(xmin).b : infinity<T>());
+        return approx_piece(fn, X, -1, lip, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_log2(const R<T>& X, const T err)  { return approx_logarithm(log2_fn(), X, err, T(0)); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_log10(const R<T>& X, const T err) { return approx_logarithm(log10_fn(), X, err, T(0)); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_log1p(const R<T>& X, const T err) { return approx_logarithm(log1p_fn(), X, err, T(-1)); }
+
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_cbrt(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const cbrt_fn fn;
+        /* |cbrt(x+r) - cbrt(x)| <= 2 cbrt(|r|/2) */
+        const T holder = (err == T(0) ? T(0) : mul_up(T(2), fn.F(mul_up(err, T(0.5))).b));
+        const R<T> Xf = widen(X, err);
+        const T m = fmin(::fabs(Xf.a), ::fabs(Xf.b));
+        const T lip = ((Xf.a > T(0) || Xf.b < T(0)) ? fn.DF(m).b : infinity<T>());
+        return approx_split0(fn, X, +1, -1, fmin(propagate(lip, err), holder));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_rcbrt(const R<T>& X, const T err) {
+        if (!is_finite(X) || (X.a <= T(0) && X.b >= T(0))) { return Approx<T>::make_entire(); }
+        const rcbrt_fn fn;
+        const R<T> Xf = widen(X, err);
+        T lip = infinity<T>();
+        if (Xf.a > T(0) || Xf.b < T(0)) {
+            const R<T> d = fn.DF(fmin(::fabs(Xf.a), ::fabs(Xf.b)));
+            lip = fmax(::fabs(d.a), ::fabs(d.b));
+        }
+        return approx_piece(fn, X, (X.a > T(0) ? +1 : -1), lip, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_atan(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        return approx_split0(atan_fn(), X, +1, -1, propagate(T(1), err));
+    }
+    
+    /* the input is restricted to [-1, 1] */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_arc(const Fn& fn, const R<T>& Xin, const T err, const int curvature_neg, const int curvature_pos) {
+        if (!is_finite(Xin) || Xin.a > T(1) || Xin.b < T(-1)) { return Approx<T>::make_entire(); }
+        const R<T> X(fmax(Xin.a, T(-1)), fmin(Xin.b, T(1)));
+        /* |f'| is increasing with |x|, the largest increment over a length d is at an endpoint: acos(1-d) */
+        const T d = fmin(err, T(2));
+        const T holder = (err == T(0) ? T(0) : acos_fn().F(sub_down(T(1), d)).b);
+        const R<T> Xf = widen(X, err);
+        const T M = fmax(::fabs(Xf.a), ::fabs(Xf.b));
+        T lip = infinity<T>();
+        if (M < T(1)) {
+            const R<T> dm = fn.DF(M);
+            lip = fmax(::fabs(dm.a), ::fabs(dm.b));
+        }
+        return approx_split0(fn, X, curvature_neg, curvature_pos, fmin(propagate(lip, err), holder));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_asin(const R<T>& X, const T err) { return approx_arc(asin_fn(), X, err, -1, +1); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_acos(const R<T>& X, const T err) { return approx_arc(acos_fn(), X, err, +1, -1); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_erf(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        return approx_split0(erf_fn(), X, +1, -1, propagate(two_over_sqrtpi<T>().b, err));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_erfc(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        return approx_split0(erfc_fn(), X, -1, +1, propagate(two_over_sqrtpi<T>().b, err));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_normcdf(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        return approx_split0(normcdf_fn(), X, +1, -1, propagate(inv_sqrt2pi<T>().b, err));
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_sinpi(const R<T>& X, const T err) { return approx_bounded_trigo<sinpi_fn>(X, err); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_cospi(const R<T>& X, const T err) { return approx_bounded_trigo<cospi_fn>(X, err); }
 
 } /* end of namespace detail */
 } /* end of namespace cusvna */

@@ -162,6 +162,23 @@ namespace op {
     static constexpr int ATANH = 18;
     static constexpr int ABS = 19;
     static constexpr int POSITIVE_PART = 20;
+    static constexpr int RSQRT = 21;
+    static constexpr int EXP2 = 22;
+    static constexpr int EXP10 = 23;
+    static constexpr int EXPM1 = 24;
+    static constexpr int LOG2 = 25;
+    static constexpr int LOG10 = 26;
+    static constexpr int LOG1P = 27;
+    static constexpr int CBRT = 28;
+    static constexpr int RCBRT = 29;
+    static constexpr int ATAN = 30;
+    static constexpr int ASIN = 31;
+    static constexpr int ACOS = 32;
+    static constexpr int ERF = 33;
+    static constexpr int ERFC = 34;
+    static constexpr int NORMCDF = 35;
+    static constexpr int SINPI = 36;
+    static constexpr int COSPI = 37;
 }
 
 template <typename AAType, int opcode>
@@ -201,7 +218,7 @@ __host__ __device__ auto operator/(const AA<T,Is...>& lhs, const AA<T,Js...>& rh
 
 
 /* Functions that introduce a new noise symbol.
-   Inputs outside of the domain of the function produce entire forms, except for sqrt, pow and acosh
+   Inputs outside of the domain of the function produce entire forms, except for sqrt, pow, acosh, asin and acos
    that are evaluated on the part of their input inside their domain when it is not empty. */
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::RECIPROCAL> reciprocal(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::SQRT> sqrt(const AA<T,Is...>& x);
@@ -230,6 +247,25 @@ template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is.
 /* |x| and max(x, 0) */
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ABS> abs(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::POSITIVE_PART> positive_part(const AA<T,Is...>& x);
+
+/* additional functions */
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::RSQRT> rsqrt(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::EXP2> exp2(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::EXP10> exp10(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::EXPM1> expm1(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::LOG2> log2(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::LOG10> log10(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::LOG1P> log1p(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::CBRT> cbrt(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::RCBRT> rcbrt(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ATAN> atan(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ASIN> asin(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ACOS> acos(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ERF> erf(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ERFC> erfc(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::NORMCDF> normcdf(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::SINPI> sinpi(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::COSPI> cospi(const AA<T,Is...>& x);
 
 
 /* other operators */
@@ -987,6 +1023,92 @@ __host__ __device__ unop_result_t<AA<T,Is...>, op::POSITIVE_PART> positive_part(
 
 
 template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::RSQRT> rsqrt(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::RSQRT>(x, detail::approx_rsqrt(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::EXP2> exp2(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::EXP2>(x, detail::approx_exp2(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::EXP10> exp10(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::EXP10>(x, detail::approx_exp10(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::EXPM1> expm1(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::EXPM1>(x, detail::approx_expm1(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::LOG2> log2(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::LOG2>(x, detail::approx_log2(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::LOG10> log10(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::LOG10>(x, detail::approx_log10(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::LOG1P> log1p(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::LOG1P>(x, detail::approx_log1p(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::CBRT> cbrt(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::CBRT>(x, detail::approx_cbrt(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::RCBRT> rcbrt(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::RCBRT>(x, detail::approx_rcbrt(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ATAN> atan(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ATAN>(x, detail::approx_atan(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ASIN> asin(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ASIN>(x, detail::approx_asin(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ACOS> acos(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ACOS>(x, detail::approx_acos(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ERF> erf(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ERF>(x, detail::approx_erf(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ERFC> erfc(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ERFC>(x, detail::approx_erfc(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::NORMCDF> normcdf(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::NORMCDF>(x, detail::approx_normcdf(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::SINPI> sinpi(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::SINPI>(x, detail::approx_sinpi(x.affine_interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::COSPI> cospi(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::COSPI>(x, detail::approx_cospi(x.affine_interval(), x.err()));
+}
+
+
+template <typename T, typename... Is>
 __host__ __device__ void AA<T,Is...>::print() const {
     printf("AA(b=%+2.1e, x=[", double(this->b()));
     this->template constexpr_apply<impl::print_functor>();
@@ -1011,5 +1133,7 @@ __host__ __device__ void AA<T,Is...>::print() const {
 #define new_aa_from_interval(interval) cusvna::AA<decltype(interval)::type>::from_interval<__COUNTER__>(interval)
 #endif
 
+
+#include <cusvna/composite.cuh>
 
 #endif /* end of include guard: AA_CUH_NLBP0A1W */
