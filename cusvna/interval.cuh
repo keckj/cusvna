@@ -38,7 +38,7 @@ namespace cusvna {
         return os;
     }
     
-    __host__ std::ostream& operator<<(std::ostream& os, const Sign& sign) {
+    inline __host__ std::ostream& operator<<(std::ostream& os, const Sign& sign) {
         switch (sign) {
             case Sign::UNKNOWN:
                 os << "UNKNOWN";
