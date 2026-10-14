@@ -7,7 +7,7 @@ import optix as ox
 import glfw
 import imgui
 
-from utils import logger as cusvna_logger, without_fast_math
+from utils import logger as cusvna_logger, math_flags, nvrtc_arch_flags, parse_example_arguments
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sutil_directory = os.path.join(script_dir, '..', 'ext', 'python-optix', 'examples')
@@ -73,6 +73,11 @@ object_dtype = np.dtype([
 ])
 
 floor_y = -1.5
+
+# affine forms used by interval marching, 'af1' (cusvna::AF1) or 'aa' (cusvna::AA), and whether rounding
+# errors are ignored (fast math, not rigorous), see __main__
+form = 'af1'
+fast = False
 
 def make_scene():
     """A gyroid ball surrounded by a ring of animated level sets, standing above a checkered floor."""
@@ -397,7 +402,9 @@ def create_module(state):
     cuda_source = os.path.join(script_dir, 'cuda', 'levelset.cu')
 
     example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
-    build_flags = without_fast_math(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True)) + (f'-I{example_include_path}',)
+    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), fast) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
+    if form == 'af1':
+        build_flags += ('-DCUSVNA_AF1',)
 
     state.module = ox.Module(state.ctx, cuda_source, compile_opts, pipeline_opts, build_flags)
     state.pipeline_opts = pipeline_opts
@@ -452,7 +459,9 @@ def create_gas(state):
 # Main
 #------------------------------------------------------------------------------
 if __name__ == '__main__':
-    cusvna_logger.info("Setting up OptiX scene...")
+    args = parse_example_arguments("Interval marching of animated level sets with OptiX.")
+    form, fast = args.form, args.fast
+    cusvna_logger.info(f"Setting up OptiX scene with {form.upper()} forms{' ignoring rounding errors' if fast else ''}...")
 
     state = DynamicGeometryState()
     state.params.width = 1024
@@ -506,7 +515,7 @@ if __name__ == '__main__':
         last_time = t0
         state.params.time = state.time
 
-        title = (f"Cusvna Interval Marching - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
+        title = (f"Cusvna Interval Marching - {form.upper()}{' fast' if fast else ''} - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
                  f" - {MarchingMethod(int(state.params.marching_method)).name.lower()}"
                  f" - {int(state.params.samples_per_pixel)} spp - speed x{state.speed:.2f}"
                  + (" - paused" if state.paused else ""))

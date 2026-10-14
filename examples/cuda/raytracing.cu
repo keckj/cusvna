@@ -5,6 +5,7 @@
 #include "ext/python-optix/examples/cuda/helpers.h"
 
 #include <cusvna/aa.cuh>
+#include <cusvna/af1.cuh>
 
 #define float3_as_ints( u ) __float_as_int( u.x ), __float_as_int( u.y ), __float_as_int( u.z )
 
@@ -81,7 +82,11 @@ extern "C" __global__ void __intersection__levelset() {
    
     /* Ray marching using general interval tracing */
     using T = float;
+#ifdef CUSVNA_AF1
+    using AA = cusvna::AF1<T,3>;
+#else
     using AA = cusvna::AA<T>;
+#endif
     using Interval = cusvna::Interval<T>;
 
     /* See Spelunking the Deep: Guaranteed Queries on General Neural Implicit Surfaces via Range Analysis, procedure 2 */

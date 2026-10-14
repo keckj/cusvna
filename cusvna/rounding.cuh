@@ -3,11 +3,18 @@
 
 /* Rigorous floating point bounds computed in the default round-to-nearest mode.
  *
- * Directed rounding is emulated: error-free transformations (TwoSum, TwoProd) detect exact
- * operations and the sign of the rounding error, inexact results are moved outward by at
- * least one ulp. Results of math library functions are enclosed by a given number of ulps.
+ * Device code uses the directed rounding instructions of the hardware (__fadd_ru, __dmul_rd, ...).
+ * In host code, or when CUSVNA_EMULATED_ROUNDING is defined, directed rounding is emulated:
+ * error-free transformations (TwoSum, TwoProd) detect exact operations and the sign of the
+ * rounding error, inexact results are moved outward by at least one ulp. Results of math
+ * library functions are enclosed by a given number of ulps.
  *
- * Assumptions (see README):
+ * When CUSVNA_IGNORE_ROUNDING is defined, rounding errors are ignored: directed operations are plain
+ * operations, math library results are taken as exact and operations may be contracted into fused
+ * multiply-adds. The results are no longer rigorous. Fast math remains forbidden: its approximate
+ * math functions are far less accurate than the CUDA math library and break the enclosures.
+ *
+ * Assumptions of the rigorous modes (see README):
  *   - IEEE-754 binary32/binary64 arithmetic in round-to-nearest mode,
  *   - no fast-math (no flush to zero, no approximate division/sqrt/transcendentals),
  *   - no floating point contraction in host code (default with -std=c++17 on gcc),
@@ -61,7 +68,7 @@ namespace detail {
 
     /* round-to-nearest operations that are never contracted into fused multiply-adds */
     __host__ __device__ inline float add_rn(const float a, const float b) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !defined(CUSVNA_IGNORE_ROUNDING)
         return __fadd_rn(a, b);
 #else
         return a + b;
@@ -69,7 +76,7 @@ namespace detail {
     }
 
     __host__ __device__ inline double add_rn(const double a, const double b) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !defined(CUSVNA_IGNORE_ROUNDING)
         return __dadd_rn(a, b);
 #else
         return a + b;
@@ -77,7 +84,7 @@ namespace detail {
     }
 
     __host__ __device__ inline float mul_rn(const float a, const float b) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !defined(CUSVNA_IGNORE_ROUNDING)
         return __fmul_rn(a, b);
 #else
         return a * b;
@@ -85,7 +92,7 @@ namespace detail {
     }
 
     __host__ __device__ inline double mul_rn(const double a, const double b) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !defined(CUSVNA_IGNORE_ROUNDING)
         return __dmul_rn(a, b);
 #else
         return a * b;
@@ -108,52 +115,112 @@ namespace detail {
     /* upper bound of |c - exact| where c is a result of an operation with an error of at most ulps ulp(s) */
     template <typename T>
     __host__ __device__ inline T error_bound(const T c, const int ulps=1) {
+#ifdef CUSVNA_IGNORE_ROUNDING
+        return T(0);
+#else
         return add_rn(mul_rn(::fabs(c), T(2*ulps+1)*fp<T>::u()), fp<T>::eta());
+#endif
     }
 
     /* up(c, k) >= c + k ulp(s), down(c, k) <= c - k ulp(s). Overflowed results are mapped to the
        largest finite value on the other side, nans and infinities pointing outward are kept. */
     template <typename T>
     __host__ __device__ inline T up(const T c, const int ulps=1) {
+#ifdef CUSVNA_IGNORE_ROUNDING
+        return c;
+#else
         if (is_finite(c)) {
             return add_rn(c, error_bound(c, ulps));
         }
         return (c == -infinity<T>() ? -fp<T>::max() : c);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T down(const T c, const int ulps=1) {
+#ifdef CUSVNA_IGNORE_ROUNDING
+        return c;
+#else
         if (is_finite(c)) {
             return sub_rn(c, error_bound(c, ulps));
         }
         return (c == infinity<T>() ? fp<T>::max() : c);
+#endif
     }
 
     /* exact rounding error of s = add_rn(a,b), that is a + b = s + e (TwoSum, Knuth) */
     template <typename T>
     __host__ __device__ inline T two_sum_error(const T a, const T b, const T s) {
+#ifdef CUSVNA_IGNORE_ROUNDING
+        return T(0);
+#else
         const T bb = sub_rn(s, a);
         return add_rn(sub_rn(a, sub_rn(s, bb)), sub_rn(b, bb));
+#endif
     }
 
     /* exact rounding error of p = mul_rn(a,b), that is a * b = p + e, when no underflow occurs */
     template <typename T>
     __host__ __device__ inline T two_prod_error(const T a, const T b, const T p) {
+#ifdef CUSVNA_IGNORE_ROUNDING
+        return T(0);
+#else
         return ::fma(a, b, -p);
+#endif
     }
+
+#if defined(CUSVNA_IGNORE_ROUNDING)
+    /* rounding errors are ignored, directed rounding is round-to-nearest */
+    template <typename T> __host__ __device__ inline T add_ru(const T a, const T b) { return a + b; }
+    template <typename T> __host__ __device__ inline T add_rd(const T a, const T b) { return a + b; }
+    template <typename T> __host__ __device__ inline T mul_ru(const T a, const T b) { return a * b; }
+    template <typename T> __host__ __device__ inline T mul_rd(const T a, const T b) { return a * b; }
+    template <typename T> __host__ __device__ inline T div_ru(const T a, const T b) { return a / b; }
+    template <typename T> __host__ __device__ inline T div_rd(const T a, const T b) { return a / b; }
+    template <typename T> __host__ __device__ inline T sqrt_ru(const T a) { return ::sqrt(a); }
+    template <typename T> __host__ __device__ inline T sqrt_rd(const T a) { return ::sqrt(a); }
+#elif defined(__CUDA_ARCH__) && !defined(CUSVNA_EMULATED_ROUNDING)
+    /* device code uses the directed rounding modes of the hardware instructions, they are exact and
+       as fast as round-to-nearest ones */
+    #define CUSVNA_NATIVE_ROUNDING
+    __device__ inline float  add_ru(const float a, const float b)   { return __fadd_ru(a, b); }
+    __device__ inline double add_ru(const double a, const double b) { return __dadd_ru(a, b); }
+    __device__ inline float  add_rd(const float a, const float b)   { return __fadd_rd(a, b); }
+    __device__ inline double add_rd(const double a, const double b) { return __dadd_rd(a, b); }
+    __device__ inline float  mul_ru(const float a, const float b)   { return __fmul_ru(a, b); }
+    __device__ inline double mul_ru(const double a, const double b) { return __dmul_ru(a, b); }
+    __device__ inline float  mul_rd(const float a, const float b)   { return __fmul_rd(a, b); }
+    __device__ inline double mul_rd(const double a, const double b) { return __dmul_rd(a, b); }
+    __device__ inline float  div_ru(const float a, const float b)   { return __fdiv_ru(a, b); }
+    __device__ inline double div_ru(const double a, const double b) { return __ddiv_ru(a, b); }
+    __device__ inline float  div_rd(const float a, const float b)   { return __fdiv_rd(a, b); }
+    __device__ inline double div_rd(const double a, const double b) { return __ddiv_rd(a, b); }
+    __device__ inline float  sqrt_ru(const float a)  { return __fsqrt_ru(a); }
+    __device__ inline double sqrt_ru(const double a) { return __dsqrt_ru(a); }
+    __device__ inline float  sqrt_rd(const float a)  { return __fsqrt_rd(a); }
+    __device__ inline double sqrt_rd(const double a) { return __dsqrt_rd(a); }
+#endif
 
     template <typename T>
     __host__ __device__ inline T add_up(const T a, const T b) {
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return add_ru(a, b);
+#else
         const T s = add_rn(a, b);
         if (!is_finite(s)) { return up(s); }
         return (two_sum_error(a, b, s) > T(0) ? up(s) : s);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T add_down(const T a, const T b) {
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return add_rd(a, b);
+#else
         const T s = add_rn(a, b);
         if (!is_finite(s)) { return down(s); }
         return (two_sum_error(a, b, s) < T(0) ? down(s) : s);
+#endif
     }
 
     template <typename T>
@@ -165,52 +232,76 @@ namespace detail {
     template <typename T>
     __host__ __device__ inline T mul_up(const T a, const T b) {
         if (a == T(0) || b == T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return mul_ru(a, b);
+#else
         const T p = mul_rn(a, b);
         if (!is_finite(p) || ::fabs(p) < fp<T>::tiny()) { return up(p); }
         return (two_prod_error(a, b, p) > T(0) ? up(p) : p);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T mul_down(const T a, const T b) {
         if (a == T(0) || b == T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return mul_rd(a, b);
+#else
         const T p = mul_rn(a, b);
         if (!is_finite(p) || ::fabs(p) < fp<T>::tiny()) { return down(p); }
         return (two_prod_error(a, b, p) < T(0) ? down(p) : p);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T div_up(const T a, const T b) {
         if (a == T(0) && b != T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return div_ru(a, b);
+#else
         const T q = div_rn(a, b);
         if (!is_finite(q) || ::fabs(q) < fp<T>::tiny() || ::fabs(a) < fp<T>::tiny()) { return up(q); }
         /* a = q*b + r exactly, a/b - q = r/b */
         const T r = ::fma(-q, b, a);
         return ((r > T(0)) == (b > T(0)) && r != T(0) ? up(q) : q);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T div_down(const T a, const T b) {
         if (a == T(0) && b != T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return div_rd(a, b);
+#else
         const T q = div_rn(a, b);
         if (!is_finite(q) || ::fabs(q) < fp<T>::tiny() || ::fabs(a) < fp<T>::tiny()) { return down(q); }
         const T r = ::fma(-q, b, a);
         return ((r > T(0)) != (b > T(0)) && r != T(0) ? down(q) : q);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T sqrt_up(const T a) {
         if (a <= T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return sqrt_ru(a);
+#else
         const T s = ::sqrt(a);
         if (!is_finite(s) || a < fp<T>::tiny()) { return up(s); }
         return (::fma(-s, s, a) > T(0) ? up(s) : s);
+#endif
     }
 
     template <typename T>
     __host__ __device__ inline T sqrt_down(const T a) {
         if (a <= T(0)) { return T(0); }
+#if defined(CUSVNA_NATIVE_ROUNDING) || defined(CUSVNA_IGNORE_ROUNDING)
+        return sqrt_rd(a);
+#else
         const T s = ::sqrt(a);
         if (!is_finite(s) || a < fp<T>::tiny()) { return fmax(down(s), T(0)); }
         return (::fma(-s, s, a) < T(0) ? fmax(down(s), T(0)) : s);
+#endif
     }
 
     /* Rigorous interval operations, R = [a,b] encloses the exact result. */

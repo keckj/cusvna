@@ -5,6 +5,7 @@
 #include "ext/python-optix/examples/cuda/helpers.h"
 
 #include <cusvna/aa.cuh>
+#include <cusvna/af1.cuh>
 
 /* must match the Shape enum of 05_levelset.py */
 enum Shape : int {
@@ -274,7 +275,11 @@ struct Frame {
 template <typename F>
 __device__ bool march(const F& f, const float3& o, const float3& d, const float t0, const float t1,
                       const float delta, float& t_hit, unsigned int& steps) {
+#ifdef CUSVNA_AF1
+    using AA = cusvna::AF1<float,1>;
+#else
     using AA = cusvna::AA<float>;
+#endif
     using Interval = cusvna::Interval<float>;
     using RaySymbol = cusvna::detail::id<0>;
 

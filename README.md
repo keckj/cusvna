@@ -14,7 +14,8 @@
 **cusvna** (CUDA Self-Validated Numerical Analysis) is a header-only C++17 library for CUDA providing
 computations with **guaranteed error bounds**. It implements [affine arithmetic](https://en.wikipedia.org/wiki/Affine_arithmetic)
 (AA), a model that keeps track of the correlations between quantities and therefore yields much tighter
-bounds than interval arithmetic on long computations.
+bounds than interval arithmetic on long computations. Two models are available: full affine arithmetic
+(`cusvna::AA`) and the cheaper fixed-size AF1 forms (`cusvna::AF1`), see [AF1 forms](#af1-forms).
 
 * **Rigorous**: the exact real result of a computation always lies within the computed bounds,
   including floating point rounding errors.
@@ -44,17 +45,19 @@ __device__ bool may_contain_root(const Interval& X, const Interval& Y) {
 ```
 
 Functions are found by argument dependent lookup, so the same templated code can be evaluated on floating
-point numbers and on affine forms.
+point numbers and on affine forms. Replacing `cusvna::AA<float>` by `cusvna::AF1<float, 2>` (from
+`<cusvna/af1.cuh>`) evaluates the same code with AF1 forms.
 
 ## Installation
 
-cusvna is header-only: add the root of this repository to your include paths and include `<cusvna/aa.cuh>`.
+cusvna is header-only: add the root of this repository to your include paths and include `<cusvna/aa.cuh>`
+and/or `<cusvna/af1.cuh>`.
 
 Requirements:
 
 * CUDA 11 or newer (the library uses `cuda::std` from libcu++, shipped with the CUDA toolkit),
 * C++17 (`nvcc -std=c++17`, `nvrtc --std=c++17`),
-* **no fast math**, see [Guarantees](#guarantees).
+* **no fast math**, even with `CUSVNA_IGNORE_ROUNDING`, see [Guarantees](#guarantees).
 
 With NVRTC (for instance through CuPy), pass the CUDA include directory and the root of this repository
 as include paths, see `examples/utils.py`.
@@ -80,6 +83,30 @@ the types of its operands.
 * Since the types of the symbols created by nonlinear operations only depend on the types of the operands,
   each of them also carries a 64-bit runtime tag: a hash of the content of the operands. Symbols with equal
   tags represent the same quantity, symbols with different tags are merged conservatively.
+
+## AF1 forms
+
+`cusvna::AF1<T, N>` implements the AF1 model of Messine: a form has exactly `N` input noise symbols and a
+single error term,
+
+    x = b + x_1 e_1 + ... + x_N e_N + err e_err
+
+Affine operations are exact up to rounding as in AA, but nonlinear operations (products of forms, elementary
+functions) add their approximation error to `err` instead of creating a new noise symbol. Forms have a
+constant size of `N + 2` scalars and need no symbol types, tags or merges, which makes them cheaper. The
+price is that correlations between results of nonlinear operations are lost: on `x = [0.1, 0.3]`,
+`sin(x) - sin(x)` has a radius of `1e-3` (twice the approximation error of `sin`) with AF1, and `2e-8`
+(rounding errors only) with AA.
+
+* Input symbols are created by `AF1::from_interval<K>(interval)` with `0 <= K < N` (checked at compile
+  time), or `AF1::variable(k, interval)` with a runtime index. `AF1::constant(interval)` encloses an
+  interval without any symbol.
+* All the operations listed below are available with the same names and the same guarantees, forms of
+  different models cannot be mixed.
+
+AF1 is a good default when nonlinear subexpressions are not reused, which is the case of most signed
+distance functions. AA is tighter when the results of nonlinear operations appear several times in an
+expression. See [Performance](#performance).
 
 ## Supported operations
 
@@ -120,9 +147,12 @@ For any operation, the exact real result of the computation belongs to the range
 including rounding errors. In particular `x.interval()`, `x.sign()` and the predicates are rigorous. 
 Bounds are never NaN.
 
-* **Rounding**: all operations run in the default round-to-nearest mode. Rounding errors of affine
-  operations are computed exactly with error-free transformations (TwoSum, TwoProd) and accumulated,
-  outward rounding is emulated by moving inexact bounds by at least one ulp.
+* **Rounding**: device code uses the directed rounding instructions of the hardware (`__fadd_ru`,
+  `__dmul_rd`, ...), which are exact and as fast as round-to-nearest ones. Rounding errors of affine
+  operations are computed exactly (TwoSum, fused multiply-add residuals) and accumulated. In host code, or
+  in device code when `CUSVNA_EMULATED_ROUNDING` is defined, everything runs in the default round-to-nearest
+  mode and outward rounding is emulated with error-free transformations, moving inexact bounds by at least
+  one ulp. Emulated rounding is 2 to 6 times slower on GPUs, see [Performance](#performance).
 * **Nonlinear functions**: the residual `f(x) - alpha*x` is bounded with outward rounding by splitting
   the input range into pieces where `f` is convex or concave. The results of math library functions are
   assumed to be within twice the maximum error documented in the CUDA math API (see `cusvna/approx.cuh`).
@@ -140,9 +170,24 @@ These guarantees hold under the following assumptions:
   `-ftz=true`, `-prec-div=false` or `-prec-sqrt=false`,
 * host code must not contract floating point operations into fused multiply-adds (`-ffp-contract=off`,
   which is the default of gcc with `-std=c++17`). Device code uses non-contractible intrinsics,
-* **hash collisions**: a collision between the runtime tags of two different values would wrongly correlate
-  them. For non-adversarial inputs the probability is about `2^-64` per comparison of two generated symbols
-  of the same type.
+* **hash collisions** (AA only): a collision between the runtime tags of two different values would wrongly
+  correlate them. For non-adversarial inputs the probability is about `2^-64` per comparison of two generated
+  symbols of the same type.
+
+### Ignoring rounding errors
+
+When `CUSVNA_IGNORE_ROUNDING` is defined, cusvna ignores all floating point rounding errors: directed
+operations become round-to-nearest operations, the error terms of affine operations are not computed, the
+results of math library functions are taken as exact, and operations may be contracted into fused
+multiply-adds. Approximation errors of nonlinear functions are still bounded. The results are **no longer
+rigorous**: enclosures may miss the exact result by a few ulps, and deep subdivisions may discard cells that
+contain zeros. This mode is meant for visualization, where it is up to 2 times faster, see
+[Performance](#performance).
+
+**Fast math is strictly discouraged, even with `CUSVNA_IGNORE_ROUNDING`.** Its approximate math functions
+(`__sinf`, `__expf`, ...) are far less accurate than the CUDA math library and break the enclosures: with
+`--use_fast_math`, `05_levelset.py` misses most surfaces and runs 5 times slower because interval marching
+cannot conclude.
 
 ## Examples
 
@@ -160,20 +205,59 @@ The `examples` directory contains Python scripts that compile CUDA kernels at ru
 ```sh
 git clone --recursive https://github.com/keckj/cusvna.git
 pip install -r cusvna/examples/requirements.txt
-python cusvna/examples/02_quadtree.py
+python cusvna/examples/02_quadtree.py            # AF1 forms
+python cusvna/examples/02_quadtree.py aa         # AA forms
+python cusvna/examples/02_quadtree.py --fast     # AF1 forms, rounding errors ignored
 ```
 
-The OptiX examples require the NVIDIA OptiX SDK and the `python-optix` submodule.
+`02_quadtree.py` to `05_levelset.py` take an optional `af1` (default) or `aa` argument selecting the affine
+forms, and a `--fast` option that defines `CUSVNA_IGNORE_ROUNDING` (see
+[Ignoring rounding errors](#ignoring-rounding-errors)). The examples never use fast math. The OptiX examples
+require the NVIDIA OptiX SDK and the `python-optix` submodule.
+
+## Performance
+
+Time of the evaluations on an RTX 5090 (float), with hardware directed rounding (default) and with
+`CUSVNA_EMULATED_ROUNDING`:
+
+| Benchmark | AA | AF1 | AA, emulated rounding | AF1, emulated rounding |
+|---|---|---|---|---|
+| `02_quadtree.py`, level 25 (126M active cells) | 3.0 ms | 2.4 ms | 6.7 ms | 5.9 ms |
+| `03_octtree.py`, level 11 (20M active cells) | 4.1 ms | 1.7 ms | 11.9 ms | 9.1 ms |
+| `03_octtree.py`, level 12 (81M active cells) | 16.4 ms | 6.8 ms | 48 ms | 36 ms |
+| `05_levelset.py`, 1024x768, 1 sample per pixel | 8.5-10 ms | 7-9 ms | 29-31 ms | 25-26 ms |
+
+Both models produce the same numbers of active cells up to a few cells and the same images.
+
+With `CUSVNA_IGNORE_ROUNDING` (`--fast` option of the examples):
+
+| Benchmark | AF1 | AF1, rounding ignored | AA | AA, rounding ignored |
+|---|---|---|---|---|
+| `02_quadtree.py`, level 22 (9.5M / 8.4M active cells) | 0.29 ms | 0.14 ms | 0.35 ms | 0.16 ms |
+| `03_octtree.py`, level 11 (20M active cells) | 1.9 ms | 0.8 ms | 4.5 ms | 3.4 ms |
+| `03_octtree.py`, level 12 (81M active cells) | 7.3 ms | 3.0 ms | 18 ms | 13.3 ms |
+| `05_levelset.py`, 1024x768, 1 sample per pixel | 8-9 ms | 7-8 ms | 9-11 ms | 7.3-8 ms |
+
+Ignoring rounding errors keeps fewer cells in the quadtree (8.4M instead of 9.5M at level 22, 57M instead
+of 126M at level 25): in single precision, the rounding errors of deep levels are larger than the cells.
+The octree keeps 0.02% fewer cells and the images of `05_levelset.py` are the same.
+
+The examples compile their device code for the architecture of the GPU (`-arch=compute_XY`, see
+`nvrtc_arch_flags` in `examples/utils.py`): NVRTC targets `compute_52` by default, which made the
+level set example about 30% slower on this GPU.
 
 ## Tests
 
 The tests compare cusvna against libaffa, which must be cloned in `ext/libaffa`
 (`git submodule update --init ext/libaffa`), and check the soundness of all operations against extended
-precision evaluations.
+precision evaluations, for AA and AF1 forms, in float and double, in host code (emulated rounding) and in
+device code (hardware rounding and CUDA math library).
 
 ```sh
-cmake -S . -B build && cmake --build build && ctest --test-dir build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build && ctest --test-dir build
 ```
+
+Add `-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc` if `nvcc` is not in your `PATH`.
 
 ## Defects found in libaffa
 

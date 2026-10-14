@@ -8,20 +8,23 @@ from utils import *
 T = np.float32
 I = np.uint64
 
+args = parse_example_arguments("Adaptive quadtree refinement around the zero level set of a function.")
+
 kernel_src = f"""
-#include <cusvna/aa.cuh>
+#include <cusvna/af1.cuh>
 
 using T = {dtype_to_ctype[T]};
 using I = {dtype_to_ctype[I]};
 using Interval = cusvna::Interval<T>;
-using AA = cusvna::AA<T>;
+using AA = {'cusvna::AA<T>' if args.form == 'aa' else 'cusvna::AF1<T,2>'};
 
 #include "examples/cuda/quadtree.cuh"
 """
 
 if __name__ == "__main__":
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
-    logger.info(f"Generating quadtree for function {fname}.")
+    logger.info(f"Generating quadtree for function {fname} with {args.form.upper()} forms"
+                f"{' ignoring rounding errors' if args.fast else ''}.")
 
     do_plot = False
     nlevels = 6 if do_plot else 25
@@ -53,7 +56,8 @@ if __name__ == "__main__":
     warps_per_block = threads_per_block // warpsize;
     threads_per_block = warps_per_block * warpsize
     kname = f'quadtree<{warps_per_block},{warpsize}>'
-    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,))
+    kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,),
+                                                           math_flags(default_build_options, args.fast))
     assert warps_per_block <= warpsize, (warps_per_block, warpsize)
     assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 

@@ -1,4 +1,4 @@
-import os, logging, tempfile
+import os, logging, tempfile, argparse
 
 import numpy as np
 import cupy as cp
@@ -88,6 +88,31 @@ def without_fast_math(flags):
     """Remove fast math related nvrtc flags, they void cusvna guarantees."""
     fast_math_flags = ('fast_math', 'fast-math', 'ftz=true', 'prec-div=false', 'prec-sqrt=false')
     return tuple(f for f in flags if not any(ff in f for ff in fast_math_flags))
+
+
+def math_flags(flags, fast):
+    """Remove fast math flags, and ignore rounding errors if fast is set (CUSVNA_IGNORE_ROUNDING, not rigorous).
+    Fast math stays forbidden in both cases: its approximate math functions break interval marching."""
+    return without_fast_math(flags) + (('-DCUSVNA_IGNORE_ROUNDING',) if fast else ())
+
+
+def parse_example_arguments(description):
+    """Command line of the graphical examples: affine forms and rounding mode."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('form', nargs='?', default='af1', choices=('af1', 'aa'),
+                        help="affine forms: af1 for cusvna::AF1 (single error term, default) or aa for cusvna::AA "
+                             "(full affine arithmetic)")
+    parser.add_argument('--fast', action='store_true',
+                        help="ignore rounding errors (CUSVNA_IGNORE_ROUNDING), the results are no longer rigorous")
+    return parser.parse_args()
+
+
+def nvrtc_arch_flags():
+    """Target the current device, NVRTC compiles for compute_52 by default (much slower code on recent GPUs)."""
+    from cupy.cuda import nvrtc
+    cc = int(cp.cuda.Device().compute_capability)
+    archs = [arch for arch in nvrtc.getSupportedArchs() if arch <= cc]
+    return (f'-arch=compute_{max(archs)}',) if archs else ()
 
 
 def build_module_and_extract_kernels_from_source(

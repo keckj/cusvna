@@ -607,6 +607,38 @@ AA<T,Is...> AA<T,Is...>::operator-() const {
 
 namespace impl {
     /* exact (or upper bounds of) rounding errors of s = add_rn(a,b), p = mul_rn(a,b) and q = div_rn(a,b) */
+#if defined(CUSVNA_IGNORE_ROUNDING)
+    template <typename T>
+    __host__ __device__ inline T add_error(const T, const T, const T) { return T(0); }
+
+    template <typename T>
+    __host__ __device__ inline T mul_error(const T, const T, const T) { return T(0); }
+
+    template <typename T>
+    __host__ __device__ inline T div_error(const T, const T, const T) { return T(0); }
+#elif defined(CUSVNA_NATIVE_ROUNDING)
+    /* TwoSum is exact, the residuals a*b - p and a - q*b computed by fused multiply-adds are exact
+       unless they underflow, in which case their rounding error is below the smallest subnormal number */
+    template <typename T>
+    __device__ inline T add_error(const T a, const T b, const T s) {
+        return ::fabs(detail::two_sum_error(a, b, s));
+    }
+
+    template <typename T>
+    __device__ inline T mul_error(const T a, const T b, const T p) {
+        if (a == T(0) || b == T(0)) { return T(0); }
+        const T r = ::fabs(::fma(a, b, -p));
+        return detail::add_ru(r, (::fabs(p) < detail::fp<T>::tiny() ? cuda::std::numeric_limits<T>::denorm_min() : T(0)));
+    }
+
+    template <typename T>
+    __device__ inline T div_error(const T a, const T b, const T q) {
+        if (a == T(0)) { return T(0); }
+        const T r = ::fabs(::fma(-q, b, a));
+        const bool underflow = (::fabs(q) < detail::fp<T>::tiny() || ::fabs(a) < detail::fp<T>::tiny());
+        return detail::div_ru(detail::add_ru(r, (underflow ? cuda::std::numeric_limits<T>::denorm_min() : T(0))), T(::fabs(b)));
+    }
+#else
     template <typename T>
     __host__ __device__ inline T add_error(const T a, const T b, const T s) {
         if (a == T(0) || b == T(0)) { return T(0); }
@@ -628,6 +660,7 @@ namespace impl {
         }
         return detail::div_up(T(::fabs(::fma(-q, b, a))), T(::fabs(b)));
     }
+#endif
 }
 
 template <typename T, typename... Is>

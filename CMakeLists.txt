@@ -15,5 +15,6 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 if(CUSVNA_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()

@@ -6,7 +6,7 @@ import screeninfo
 
 from PIL import Image, ImageOps
 
-from utils import logger as cusvna_logger, without_fast_math
+from utils import logger as cusvna_logger, math_flags, nvrtc_arch_flags, parse_example_arguments
 
 display_iterations = False
 
@@ -31,9 +31,11 @@ def create_acceleration_structure(ctx, bboxes):
     return gas
 
 
-def create_module(ctx, pipeline_opts):
+def create_module(ctx, pipeline_opts, form, fast):
     compile_opts = ox.ModuleCompileOptions(debug_level=ox.CompileDebugLevel.FULL, opt_level=ox.CompileOptimizationLevel.LEVEL_0)
-    build_flags = without_fast_math(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True)) + (f'-I{example_include_path}',)
+    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), fast) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
+    if form == 'af1':
+        build_flags += ('-DCUSVNA_AF1',)
     module = ox.Module(ctx, cuda_src, compile_opts, pipeline_opts, build_flags)
     return module
 
@@ -115,7 +117,8 @@ def launch_pipeline(pipeline : ox.Pipeline, sbt, gas):
 
 
 if __name__ == "__main__":
-    cusvna_logger.info("Setting up OptiX scene...")
+    args = parse_example_arguments("Interval ray tracing of level sets with OptiX.")
+    cusvna_logger.info(f"Setting up OptiX scene with {args.form.upper()} forms{' ignoring rounding errors' if args.fast else ''}...")
 
     logger = ox.Logger(cusvna_logger)
     ctx = ox.DeviceContext(validation_mode=True, log_callback_function=logger, log_callback_level=4)
@@ -130,7 +133,7 @@ if __name__ == "__main__":
                                                  num_attribute_values=4,
                                                  exception_flags=ox.ExceptionFlags.NONE,
                                                  pipeline_launch_params_variable_name="params")
-    module = create_module(ctx, pipeline_options)
+    module = create_module(ctx, pipeline_options, args.form, args.fast)
     program_grps = create_program_groups(ctx, module)
     pipeline = create_pipeline(ctx, program_grps, pipeline_options)
     sbt = create_sbt(program_grps, centers, radii)
