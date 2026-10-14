@@ -2,6 +2,8 @@
 #ifndef UTILS_H_F7USKNYL
 #define UTILS_H_F7USKNYL
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -9,9 +11,15 @@
 #include "aa.h" /* libaffa */
 #include "cusvna/aa.cuh"
 
+/* cusvna bounds are rounded outward while libaffa bounds are not, allow a few ulps of difference */
+template <typename T>
+T tolerance(const T& a, const T& b) {
+    return 64 * std::numeric_limits<T>::epsilon() * std::max(T(1), std::max(std::fabs(a), std::fabs(b)));
+}
+
 template <typename T>
 bool close(const T& a, const T& b) {
-    return abs(b - a) <= 10 * std::numeric_limits<T>::epsilon() * max(T(1), max(a, b));
+    return std::fabs(b - a) <= tolerance(a, b);
 }
 
 bool operator==(const interval& lhs, const cusvna::Interval<double>& rhs) {
@@ -19,7 +27,7 @@ bool operator==(const interval& lhs, const cusvna::Interval<double>& rhs) {
 }
 
 bool tighter(const interval& lhs, const cusvna::Interval<double>& rhs) {
-    return (lhs.left() <= rhs.a) && (lhs.right() >= rhs.b);
+    return (lhs.left() <= rhs.a + tolerance(lhs.left(), rhs.a)) && (lhs.right() >= rhs.b - tolerance(lhs.right(), rhs.b));
 }
 
 template <typename... Is>

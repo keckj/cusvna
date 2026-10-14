@@ -74,20 +74,27 @@ int main() {
     check_enclosure("x*sqrt(x+1)*sqrt(2-x)",     [](auto x, auto y) { return x*sqrt(x+1.0)*sqrt(2.0-x); }, V, V);
     check_enclosure("(x*y)*(x*y) - (x*x)*(y*y)", [](auto x, auto y) { return (x*y)*(x*y) - (x*x)*(y*y); }, U, U);
 
-    /* same quantities, correlations must be preserved */
+    /* same quantities, correlations must be preserved: noise symbols cancel exactly, only the
+       independent rounding error terms remain */
     {
         const auto x = AA::from_interval<0>(U);
         const auto y = AA::from_interval<1>(U);
-
+        
+        auto cancels = [](const auto& d, const auto& v) { 
+            return d.affine_radius() == T(0) && d.radius() <= T(2)*v.err();
+        };
+        
         const auto z = x*y;
-        check((z - z).radius() == T(0), "z - z == 0 with z = x*y");
-        check((x*y - x*y).radius() == T(0), "x*y - x*y == 0");
-        check((x*y + 1.0 - x*y).radius() == T(0), "x*y + 1 - x*y == 1");
-
+        check(cancels(z - z, z), "z - z == 0 with z = x*y");
+        check(cancels(x*y - x*y, z), "x*y - x*y == 0");
+        check(cancels(x*y + 1.0 - x*y, z), "x*y + 1 - x*y == 1");
+        
         const auto s = sqrt(y + 2.0);
-        check((s - s).radius() == T(0), "s - s == 0 with s = sqrt(y+2)");
-        check((sqrt(y + 2.0) - sqrt(y + 2.0)).radius() == T(0), "sqrt(y+2) - sqrt(y+2) == 0");
-        check((z*s - z*s).radius() == T(0), "z*s - z*s == 0");
+        check(cancels(s - s, s), "s - s == 0 with s = sqrt(y+2)");
+        check(cancels(sqrt(y + 2.0) - sqrt(y + 2.0), s), "sqrt(y+2) - sqrt(y+2) == 0");
+        check(cancels(z*s - z*s, z*s), "z*s - z*s == 0");
+        check(cancels(exp(z) - exp(z), exp(z)), "exp(z) - exp(z) == 0");
+        check(cancels(sin(s*z) - sin(s*z), sin(s*z)), "sin(s*z) - sin(s*z) == 0");
     }
 
     if (failures) {

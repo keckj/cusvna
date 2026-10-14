@@ -378,6 +378,21 @@ namespace detail {
     template <typename cls, typename new_symbol>
     using insert_new_symbol_t = typename InsertNewSymbolType<cls, new_symbol>::type;
 
+    /* result type of an unary operation that introduces a new symbol */
+    template <typename cls, int opcode>
+    using unop_result_t = insert_new_symbol_t<cls, unop_type_id<cls, opcode>>;
+
+    /* result type of a binary operation that introduces a new symbol */
+    template <typename lhs, typename rhs, int opcode>
+    using binop_result_t = insert_new_symbol_t<merged_t<lhs, rhs>, binop_type_id<lhs, rhs, opcode>>;
+
+    /* non-deduced context */
+    template <typename T>
+    struct identity { using type = T; };
+
+    template <typename T>
+    using identity_t = typename identity<T>::type;
+
 } /* end of namespace detail */
 } /* end of namespace cusvna */
 

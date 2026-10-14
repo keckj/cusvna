@@ -29,3 +29,7 @@ add_test(NAME 2d_function COMMAND $<TARGET_FILE:test3>)
 add_executable(test4 ${CMAKE_CURRENT_SOURCE_DIR}/test4.cu)
 target_include_directories(test4 PUBLIC ${CUSVNA_INCLUDE_DIR})
 add_test(NAME generated_symbols COMMAND $<TARGET_FILE:test4>)
+
+add_executable(test5 ${CMAKE_CURRENT_SOURCE_DIR}/test5.cu)
+target_include_directories(test5 PUBLIC ${CUSVNA_INCLUDE_DIR})
+add_test(NAME soundness COMMAND $<TARGET_FILE:test5>)
