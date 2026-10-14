@@ -6,7 +6,7 @@ import screeninfo
 
 from PIL import Image, ImageOps
 
-from utils import logger as cusvna_logger
+from utils import logger as cusvna_logger, without_fast_math
 
 display_iterations = False
 
@@ -33,7 +33,7 @@ def create_acceleration_structure(ctx, bboxes):
 
 def create_module(ctx, pipeline_opts):
     compile_opts = ox.ModuleCompileOptions(debug_level=ox.CompileDebugLevel.FULL, opt_level=ox.CompileOptimizationLevel.LEVEL_0)
-    build_flags = ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True) + (f'-I{example_include_path}',)
+    build_flags = without_fast_math(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True)) + (f'-I{example_include_path}',)
     module = ox.Module(ctx, cuda_src, compile_opts, pipeline_opts, build_flags)
     return module
 

@@ -79,8 +79,15 @@ def determine_cuda_include_dir(logger):
 
 
 cuda_include_dir = determine_cuda_include_dir(logger);
+# fast math (flush to zero, approximate division, sqrt and transcendentals) voids cusvna guarantees
 default_build_options = (f'-I{cuda_include_dir}', f'-I{cusvna_include_dir}', '--std=c++17',
-                            '--use_fast_math', '--restrict', '--ptxas-options', '-O3')
+                            '--restrict', '--ptxas-options', '-O3')
+
+
+def without_fast_math(flags):
+    """Remove fast math related nvrtc flags, they void cusvna guarantees."""
+    fast_math_flags = ('fast_math', 'fast-math', 'ftz=true', 'prec-div=false', 'prec-sqrt=false')
+    return tuple(f for f in flags if not any(ff in f for ff in fast_math_flags))
 
 
 def build_module_and_extract_kernels_from_source(

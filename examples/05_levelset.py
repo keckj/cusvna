@@ -7,7 +7,7 @@ import optix as ox
 import glfw
 import imgui
 
-from utils import logger as cusvna_logger
+from utils import logger as cusvna_logger, without_fast_math
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sutil_directory = os.path.join(script_dir, '..', 'ext', 'python-optix', 'examples')
@@ -251,7 +251,7 @@ def create_module(state):
     cuda_source = os.path.join(script_dir, 'cuda', 'levelset.cu')
 
     example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
-    build_flags = ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True) + (f'-I{example_include_path}',)
+    build_flags = without_fast_math(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True)) + (f'-I{example_include_path}',)
 
     state.module = ox.Module(state.ctx, cuda_source, compile_opts, pipeline_opts, build_flags)
     state.pipeline_opts = pipeline_opts
