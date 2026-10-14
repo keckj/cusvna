@@ -1,6 +1,15 @@
-# cusvna
+<p align="center">
+  <img src="logo/cusvna-logo.svg" alt="cusvna" width="600">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/CUDA-11%2B-76B900?logo=nvidia&logoColor=white" alt="CUDA 11+"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white" alt="C++17"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/NVRTC-supported-76B900?logo=nvidia&logoColor=white" alt="NVRTC supported"></a>
+  <img src="https://img.shields.io/badge/header--only-yes-brightgreen" alt="Header-only">
+  <img src="https://img.shields.io/badge/precision-float%20%7C%20double-orange" alt="float and double">
+</p>
 
 **cusvna** (CUDA Self-Validated Numerical Analysis) is a header-only C++17 library for CUDA providing
 computations with **guaranteed error bounds**. It implements [affine arithmetic](https://en.wikipedia.org/wiki/Affine_arithmetic)
