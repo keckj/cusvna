@@ -99,7 +99,8 @@ void check_tight(const std::string& name, F&& f, const T x0, const int max_ulps)
     const auto y = cusvna::AA<T>::template from_interval<1>(cusvna::Interval<T>(T(0), T(0)));
     const cusvna::Interval<T> r = f(x, y, T(0)).interval();
     const LD ref = f(LD(x0), LD(0), T(0));
-    const LD ulp = std::numeric_limits<T>::epsilon() * std::fmax(std::fabs(ref), LD(std::numeric_limits<T>::min()));
+    /* exact zeros are enclosed with a few smallest normal numbers */
+    const LD ulp = std::fmax(std::numeric_limits<T>::epsilon() * std::fabs(ref), LD(std::numeric_limits<T>::min()));
     const LD width = LD(r.b) - LD(r.a);
     const LD tol = std::ldexp(std::fmax(std::fabs(ref), LD(1)), -60);
     if (!(LD(r.a) <= ref + tol && ref - tol <= LD(r.b))) {
@@ -208,6 +209,9 @@ void run() {
     check_unary<T>("normcdf",    [](auto x, auto t) { return normcdf(x); }, always, 64);
     check_unary<T>("sinpi",      [](auto x, auto t) { return sinpi(x); }, always, 24);
     check_unary<T>("cospi",      [](auto x, auto t) { return cospi(x); }, always, 24);
+    auto gamma_ok = [](LD a, LD b) { return a > 0 && b < (std::is_same<T,float>::value ? 34 : 170); };
+    check_unary<T>("tgamma",     [](auto x, auto t) { return tgamma(x); }, gamma_ok, 64);
+    check_unary<T>("lgamma",     [](auto x, auto t) { return lgamma(x); }, positive, 48);
     check_unary<T>("floor",      [](auto x, auto t) { return floor(x); }, always, 0);
     check_unary<T>("ceil",       [](auto x, auto t) { return ceil(x); }, always, 0);
     check_unary<T>("trunc",      [](auto x, auto t) { return trunc(x); }, always, 0);
@@ -289,6 +293,14 @@ void run() {
     check("atan2(y, 0.5)",      [](auto x, auto y, auto t) { using S = decltype(t); return atan2(y, S(0.5)); }, U, U);
     check("atan2(-1, x)",       [](auto x, auto y, auto t) { using S = decltype(t); return atan2(S(-1), x); }, U, U);
     check("atan2(x*y, x+2)",    [](auto x, auto y, auto t) { using S = decltype(t); return atan2(x*y, x + S(2)); }, U, U);
+    check("fmod(x, y) crossing",[](auto x, auto y, auto t) { return fmod(x, y); }, U, W);
+    check("fmod(x, y) exact",   [](auto x, auto y, auto t) { return fmod(x, y); }, V, I(3, 4));
+    check("fmod(x+5, y)",       [](auto x, auto y, auto t) { using S = decltype(t); return fmod(x + S(5), y); }, I(T(0.1), T(0.2)), I(2, T(2.05)));
+    check("fmod(x+5, -y)",      [](auto x, auto y, auto t) { using S = decltype(t); return fmod(x + S(5), -y); }, I(T(0.1), T(0.2)), I(2, T(2.05)));
+    check("fmod(-x-5, y) range",[](auto x, auto y, auto t) { using S = decltype(t); return fmod(-x - S(5), y); }, V, I(T(1.2), T(1.3)));
+    check("fmod(7, y)",         [](auto x, auto y, auto t) { using S = decltype(t); return fmod(S(7), y); }, V, I(2, T(2.2)));
+    check("tgamma(x*y + 2)",    [](auto x, auto y, auto t) { using S = decltype(t); return tgamma(x*y + S(2)); }, U, V);
+    check("lgamma(x) - lgamma(y)", [](auto x, auto y, auto t) { return lgamma(x) - lgamma(y); }, W, I(T(0.1), T(0.5)));
     check("pow(x, y)",          [](auto x, auto y, auto t) { return pow(x, y); }, W, U);
     check("pow(x, x*y)",        [](auto x, auto y, auto t) { return pow(x, x*y); }, W, U);
     check("pow(2, y)",          [](auto x, auto y, auto t) { using S = decltype(t); return pow(S(2), y); }, U, U);
@@ -301,6 +313,30 @@ void run() {
         ++checks;
         if (!((atan2(y, x) - atan2(y, x)).affine_radius() == T(0))) { fail(std::string(type_name<T>()) + " atan2 does not cancel"); }
         
+        /* fmod(x+5, y) = x + 5 - 2y exactly when trunc((x+5)/y) = 2 */
+        const auto z = cusvna::AA<T>::template from_interval<2>(I(2, T(2.05)));
+        const auto w = cusvna::AA<T>::template from_interval<3>(I(T(0.1), T(0.2)));
+        ++checks;
+        if (!((fmod(w + T(5), z) - (w + T(5) - z*T(2))).affine_radius() == T(0))) { fail(std::string(type_name<T>()) + " fmod is not affine"); }
+        
+        /* derivative enclosures of the gamma functions (secant slopes) contain the derivative */
+        auto derivative_check = [&](const std::string& name, auto fn, auto ref) {
+            const T points[] = { T(0.3), T(1), T(1.4616), T(2.5), T(7) };
+            for (const T u : points) {
+                ++checks;
+                const cusvna::Interval<T> D = fn.DF(u);
+                const LD h = 1e-5L;
+                const LD d = (ref(LD(u) + h) - ref(LD(u) - h)) / (2*h);   /* error of order h^2 */
+                const LD tol = std::fmax(std::fabs(d), LD(1)) * 1e-9L;
+                if (!(LD(D.a) <= d + tol && d - tol <= LD(D.b))) {
+                    std::cerr << "  " << name << "'(" << u << ") = " << d << " not in [" << D.a << ", " << D.b << "]" << std::endl;
+                    fail(std::string(type_name<T>()) + " " + name + " derivative enclosure");
+                }
+            }
+        };
+        derivative_check("tgamma", cusvna::detail::tgamma_fn(), [](LD v) { return std::tgamma(v); });
+        derivative_check("lgamma", cusvna::detail::lgamma_fn(), [](LD v) { return std::lgamma(v); });
+
         /* interval utilities */
         checks += 6;
         if (!(cusvna::hull(I(0, 1), I(3, 4)).a == T(0) && cusvna::hull(I(0, 1), I(3, 4)).b == T(4))) { fail("hull"); }

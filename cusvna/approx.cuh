@@ -1099,6 +1099,69 @@ namespace detail {
         return make_range(X.a >= T(0) ? T(0) : -m, X.b <= T(0) ? T(0) : m);
     }
 
+
+    /*** gamma functions on x > 0 ***/
+
+    /* Functions convex on x > 0 whose derivative is not available (the digamma function is not part of 
+       the math libraries): f'(u) is enclosed by the slopes of the secants on both sides of u. */
+    template <typename Base>
+    struct convex_secant_fn {
+        static constexpr bool has_dfinv = false;
+        template <typename T> __host__ __device__ T f(const T x) const { return Base::eval(x); }
+        template <typename T> __host__ __device__ R<T> F(const T x) const { return enclose(Base::eval(x), Base::ulps); }
+        /* u - step and u + step are in [u/2, 2u], so that the steps are computed exactly */
+        template <typename T> __host__ __device__ T step(const T u) const { 
+            return fmin(mul_rn(T(::sqrt(fp<T>::u())), fmax(u, T(1))), mul_rn(u, T(0.5)));
+        }
+        template <typename T> __host__ __device__ T df(const T x) const {
+            const T h = step(x);
+            return (f(x + h) - f(x - h)) / ((x + h) - (x - h));
+        }
+        template <typename T> __host__ __device__ R<T> DF(const T u) const {
+            const T h = step(u);
+            const T a = sub_rn(u, h);
+            const T b = add_rn(u, h);
+            const R<T> Fu = F(u);
+            const R<T> Fa = F(a);
+            const R<T> Fb = F(b);
+            /* (f(u) - f(a))/(u - a) <= f'(u) <= (f(b) - f(u))/(b - u) */
+            return R<T>(div_down(sub_down(Fu.a, Fa.b), sub_rn(u, a)), div_up(sub_up(Fb.b, Fu.a), sub_rn(b, u)));
+        }
+    };
+    
+    struct tgamma_base {
+        static constexpr int ulps = 24;
+        template <typename T> __host__ __device__ static T eval(const T x) { return ::tgamma(x); }
+    };
+    
+    struct lgamma_base {
+        static constexpr int ulps = 16;
+        template <typename T> __host__ __device__ static T eval(const T x) { return ::lgamma(x); }
+    };
+    
+    using tgamma_fn = convex_secant_fn<tgamma_base>;
+    using lgamma_fn = convex_secant_fn<lgamma_base>;
+    
+    /* the input must be positive, entire otherwise */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_convex_positive(const R<T>& X, const T err) {
+        if (!is_finite(X) || !(X.a > T(0))) { return Approx<T>::make_entire(); }
+        const Fn fn;
+        T lip = T(0);
+        if (err != T(0)) {
+            /* f' is increasing, |f'| is maximal at an endpoint */
+            const R<T> Xf = widen(X, err);
+            lip = (Xf.a > T(0) ? fmax(fmax(-fn.DF(Xf.a).a, fn.DF(Xf.b).b), T(0)) : infinity<T>());
+        }
+        return approx_piece(fn, X, +1, lip, err);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_tgamma(const R<T>& X, const T err) { return approx_convex_positive<tgamma_fn>(X, err); }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_lgamma(const R<T>& X, const T err) { return approx_convex_positive<lgamma_fn>(X, err); }
+
 } /* end of namespace detail */
 } /* end of namespace cusvna */
 

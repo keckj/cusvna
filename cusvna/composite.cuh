@@ -229,6 +229,37 @@ template <typename T, typename... Is>
 __host__ __device__ auto atan2(const detail::identity_t<T>& y, const AA<T,Is...>& x) { return atan2(AA<T>(T(y)), x); }
 
 
+/* fmod(x, y) = x - trunc(x/y)*y with an affine divisor y: exactly x - n*y (correlated with x and y) when
+   trunc(x/y) = n is constant over the input box, else the range of the result. Entire if y may be 0. */
+template <typename T, typename... Is, typename... Js>
+__host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA> fmod(const AA<T,Is...>& x, const AA<T,Js...>& y) {
+    using Result = detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA>;
+    using NewSymbol = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA>;
+    const detail::tag_t new_tag = y.content_hash(x.content_hash(impl::seed(op::FMOD_AA)));
+    const Interval<T> X = x.interval();
+    const Interval<T> Y = y.interval();
+    Result out(T(0));
+    if (!detail::is_finite(X) || !detail::is_finite(Y) || (Y.a <= T(0) && Y.b >= T(0))) {
+        out.set_entire();
+        return out;
+    }
+    const Interval<T> Q = detail::operator/(X, Y);
+    const T n = ::trunc(Q.a);
+    if (n == ::trunc(Q.b)) {
+        return impl::collapse<Result, NewSymbol>(x - y * n, new_tag);
+    }
+    /* the result has the sign of x and is smaller than |y| in magnitude */
+    const T M = detail::fmax(T(::fabs(Y.a)), T(::fabs(Y.b)));
+    const AA<T> range = impl::constant_form(Interval<T>(X.a >= T(0) ? T(0) : -M, X.b <= T(0) ? T(0) : M));
+    out.b() = range.b();
+    out.template x<NewSymbol>() = range.err();
+    out.template tag<NewSymbol>() = new_tag;
+    return out;
+}
+
+template <typename T, typename... Js>
+__host__ __device__ auto fmod(const detail::identity_t<T>& x, const AA<T,Js...>& y) { return fmod(AA<T>(T(x)), y); }
+
 /* x^y = exp(y*log(x)) for x > 0 (entire otherwise) */
 template <typename T, typename... Is, typename... Js>
 __host__ __device__ auto pow(const AA<T,Is...>& x, const AA<T,Js...>& y) { return exp(y * log(x)); }

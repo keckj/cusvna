@@ -57,7 +57,8 @@ __device__ bool may_contain_root(const Interval& X, const Interval& Y) {
 | `smooth_min(a, b, k)`, `smooth_max(a, b, k)` | polynomial smooth minimum of distances |
 | `atan2(y, x)` | whole range `[-pi, pi]` when the input box meets the branch cut `y = 0, x <= 0` |
 | `pow(x, y)`, `pow(c, y)` with an affine exponent | `exp(y*log(x))`, for `x > 0` |
-| `floor`, `ceil`, `trunc`, `round`, `rint`, `fract`, `fmod(x, c)` | exact (`fract` and `fmod` stay correlated with `x`) when no discontinuity is crossed, else the range of the result |
+| `floor`, `ceil`, `trunc`, `round`, `rint`, `fract`, `fmod(x, y)` | exact (`fract` and `fmod` stay correlated with their arguments) when no discontinuity is crossed, else the range of the result. `y` may be a scalar or a form |
+| `tgamma(x)`, `lgamma(x)` | for `x > 0` only (entire otherwise) |
 | `certainly_lt`, `certainly_le`, `certainly_gt`, `certainly_ge`, `possibly_zero` | rigorous predicates |
 | `hull`, `intersect`, `contains`, `subset`, `is_empty` | on `cusvna::Interval` |
 | `x.interval()`, `x.sign()`, `x.radius()`, `x.is_entire()` | |
@@ -76,6 +77,8 @@ including rounding errors. In particular `x.interval()` and `x.sign()` are rigor
 * **Nonlinear functions**: the residual `f(x) - alpha*x` is bounded with outward rounding by splitting 
   the input range into pieces where `f` is convex or concave. The results of math library functions are
   assumed to be within twice the maximum error documented in the CUDA math API (see `cusvna/approx.cuh`).
+  `tgamma` and `lgamma` are restricted to positive inputs where this assumption holds; CUDA does not bound
+  the relative error of `lgamma` for negative inputs close to its zeros.
 * **Domains**: if an input range is not entirely inside the domain of a function, the result is entire
   (its interval is `[-inf, inf]`), except for `sqrt`, `pow(x, T y)`, `acosh`, `asin` and `acos` which are evaluated on
   the part of their input inside their domain when it is not empty. Overflows produce entire forms. 
