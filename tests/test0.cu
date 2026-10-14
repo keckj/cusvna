@@ -56,7 +56,7 @@ int main() {
     assert_equal(w*w/w, w_*w_/w_, "w*w/w");
     
     assert_equal(sqrt(w), sqrt(w_), "sqrt(w)");
-    assert_equal(exp(w), exp(w_), "exp(w)");
+    /* exp is not compared to libaffa, its base coefficient is wrong (see test4) */
     assert_equal(log(w), log(w_), "log(w)");
 
     /*assert_equal(sinh(w), sinh(w_), "sinh(w)");*/

@@ -748,8 +748,10 @@ __host__ __device__ ResultType exp(const AA<T, Is...>& val) {
     const T eb = ::exp(b);
     const T alpha = (eb - ea)/(b - a);
     
-    const T zeta  = alpha * (T(1) - ::log(alpha));
+    /* chebyshev approximation: the secant through (a,ea) lies above exp, the tangent with 
+       the same slope alpha lies below, zeta is the mean of their intercepts. */
     const T delta = (alpha * (::log(alpha) - T(1) - a) + ea)/T(2);
+    const T zeta  = alpha * (T(1) - ::log(alpha)) + delta;
 
     const detail::tag_t new_tag = val.content_hash(impl::seed(op::EXP));
     return ResultType().template constexpr_apply<impl::affine_functor>(val, alpha, zeta, delta, new_tag);

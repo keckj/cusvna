@@ -1,4 +1,4 @@
-/* This test checks generated noise symbols: two different quantities whose noise symbols share the
+/* This test checks the soundness of nonlinear operations and of generated noise symbols: two different quantities whose noise symbols share the
    same type must not be correlated, while reusing the same quantity must keep its correlations.
    Range enclosures are checked against pointwise evaluations of the same expressions. */
 #include <cmath>
@@ -65,7 +65,12 @@ int main() {
         check_enclosure("sqrt(x+1) - sqrt(2*x+1)",   [](auto x, auto y) { return sqrt(x+1.0) - sqrt(2.0*x+1.0); }, W, W);
         check_enclosure("1/(x+1) - 1/(2-x)",         [](auto x, auto y) { return reciprocal(x+1.0) - reciprocal(2.0-x); }, W, W);
         check_enclosure("log(x+1) - log(2-x)",       [](auto x, auto y) { return log(x+1.0) - log(2.0-x); }, W, W);
+        check_enclosure("exp(x)",                    [](auto x, auto y) { return exp(x); }, W, W);
+        check_enclosure("exp(4*x-2)",                [](auto x, auto y) { return exp(4.0*x-2.0); }, W, W);
+        check_enclosure("exp(x) - exp(x+1)",         [](auto x, auto y) { return exp(x) - exp(x+1.0); }, W, W);
     }
+    check_enclosure("exp(x)",                    [](auto x, auto y) { return exp(x); }, V, V);
+    check_enclosure("exp(x+y)",                  [](auto x, auto y) { return exp(x+y); }, U, U);
     check_enclosure("x*sqrt(x+1)*sqrt(2-x)",     [](auto x, auto y) { return x*sqrt(x+1.0)*sqrt(2.0-x); }, V, V);
     check_enclosure("(x*y)*(x*y) - (x*x)*(y*y)", [](auto x, auto y) { return (x*y)*(x*y) - (x*x)*(y*y); }, U, U);
 
