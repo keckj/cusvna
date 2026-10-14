@@ -6,6 +6,10 @@
 #include <cuda/std/tuple>
 #include <cuda/std/array>
 
+#ifndef __CUDACC_RTC__
+#include <cstring>
+#endif
+
 namespace cusvna {
 namespace detail {
     
@@ -291,6 +295,67 @@ namespace detail {
     
     template <typename lhs, typename rhs, int opcode>
     using binop_type_id = OpId<lhs,rhs,id<opcode>>;
+
+
+    /* generated symbols are the ones introduced by non-affine operations, as opposed to input symbols */
+    template <typename I>
+    struct IsGenerated : cuda::std::false_type {};
+
+    template <typename... Args>
+    struct IsGenerated<OpId<Args...>> : cuda::std::true_type {};
+
+    template <typename I>
+    static constexpr bool is_generated = IsGenerated<I>::value;
+
+    static_assert(!is_generated<id<0>>, "is_generated error");
+    static_assert(is_generated<unop_type_id<id<0>,1>>, "is_generated error");
+    static_assert(is_generated<binop_type_id<id<0>,id<1>,2>>, "is_generated error");
+
+
+    /* runtime tags of generated symbols: the type of a generated symbol only depends on the
+       types of the operands, two different values of the same type would share the same symbol.
+       The tag is a hash of the operands content (see AA::content_hash) and tells them apart. */
+    using tag_t = unsigned long long;
+
+    __host__ __device__ inline tag_t fmix64(tag_t k) {
+        /* murmur3 64-bit finalizer */
+        k ^= k >> 33;
+        k *= 0xff51afd7ed558ccdULL;
+        k ^= k >> 33;
+        k *= 0xc4ceb9fe1a85ec53ULL;
+        k ^= k >> 33;
+        return k;
+    }
+
+    __host__ __device__ inline tag_t hash_combine(tag_t h, tag_t v) {
+        return fmix64(h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
+    }
+
+    __host__ __device__ inline tag_t bits(const float& v) {
+#ifdef __CUDA_ARCH__
+        return tag_t(__float_as_uint(v));
+#else
+        unsigned int u;
+        memcpy(&u, &v, sizeof(u));
+        return tag_t(u);
+#endif
+    }
+
+    __host__ __device__ inline tag_t bits(const double& v) {
+#ifdef __CUDA_ARCH__
+        return tag_t(__double_as_longlong(v));
+#else
+        tag_t u;
+        memcpy(&u, &v, sizeof(u));
+        return u;
+#endif
+    }
+
+    template <typename T>
+    __host__ __device__ inline tag_t bits(const T& v) {
+        static_assert(cuda::std::is_integral<T>::value, "Unsupported scalar type.");
+        return tag_t(v);
+    }
 
 
     /* insert new symbol into an existing AA type */

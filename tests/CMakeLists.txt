@@ -25,3 +25,7 @@ target_include_directories(test3 PUBLIC ${CUSVNA_INCLUDE_DIR})
 target_include_directories(test3 PUBLIC ${LIBAFFA_INCLUDE_DIR})
 target_link_libraries(test3 affa)
 add_test(NAME 2d_function COMMAND $<TARGET_FILE:test3>)
+
+add_executable(test4 ${CMAKE_CURRENT_SOURCE_DIR}/test4.cu)
+target_include_directories(test4 PUBLIC ${CUSVNA_INCLUDE_DIR})
+add_test(NAME generated_symbols COMMAND $<TARGET_FILE:test4>)
