@@ -1,4 +1,4 @@
-import os, sys, enum, collections
+import os, sys, enum, time, collections
 
 import cupy as cp
 import numpy as np
@@ -7,7 +7,7 @@ import optix as ox
 import glfw
 import imgui
 
-from utils import logger as cusvna_logger, math_flags, nvrtc_arch_flags, parse_example_arguments
+from utils import logger as cusvna_logger, math_flags, rounding_description, nvrtc_arch_flags, parse_example_arguments
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sutil_directory = os.path.join(script_dir, '..', 'ext', 'python-optix', 'examples')
@@ -74,10 +74,10 @@ object_dtype = np.dtype([
 
 floor_y = -1.5
 
-# affine forms used by interval marching, 'af1' (cusvna::AF1) or 'aa' (cusvna::AA), and whether rounding
-# errors are ignored (fast math, not rigorous), see __main__
+# affine forms used by interval marching, 'af1' (cusvna::AF1) or 'aa' (cusvna::AA), and rounding mode of
+# cusvna, 'native', 'emulated' or 'ignore' (see utils.rounding_modes), set in __main__
 form = 'af1'
-fast = False
+rounding = 'native'
 
 def make_scene():
     """A gyroid ball surrounded by a ring of animated level sets, standing above a checkered floor."""
@@ -156,7 +156,7 @@ class Params:
 
 class DynamicGeometryState:
     __slots__ = ['params', 'time', 'ctx', 'module', 'pipeline', 'pipeline_opts',
-            'raygen_grp', 'miss_grps', 'hit_grp', 'sbt', 'paused', 'speed', 'accum_buffer',
+            'raygen_grp', 'miss_grps', 'hit_grp', 'sbt', 'paused', 'speed', 'accum_buffer', 'frame',
             'generate_vertices_kernel', 'd_temp_vertices', 'last_exploding_sphere_rebuild_time',
             'gas', 'ias',
             'trackball', 'camera_changed', 'mouse_button', 'resize_dirty', 'minimized']
@@ -402,7 +402,7 @@ def create_module(state):
     cuda_source = os.path.join(script_dir, 'cuda', 'levelset.cu')
 
     example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
-    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), fast) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
+    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), rounding) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
     if form == 'af1':
         build_flags += ('-DCUSVNA_AF1',)
 
@@ -456,16 +456,68 @@ def create_gas(state):
     state.params.trav_handle = state.gas.handle
 
 #------------------------------------------------------------------------------
+# Offscreen rendering and benchmark
+#------------------------------------------------------------------------------
+def init_offscreen(state):
+    """Frame and accumulation buffers of offscreen rendering, without window."""
+    state.frame = cp.zeros((int(state.params.height), int(state.params.width), 4), dtype=cp.uint8)
+    state.params.frame_buffer = state.frame.data.ptr
+    alloc_accum_buffer(state)
+    handle_camera_update(state)
+
+def launch_offscreen(state):
+    """Renders a subframe in state.frame and waits for its completion."""
+    state.pipeline.launch(state.sbt, dimensions=state.launch_dimensions,
+            params=state.params.handle, stream=cp.cuda.Stream.null)
+    cp.cuda.Stream.null.synchronize()
+
+def offscreen_image(state):
+    from PIL import Image
+    return Image.fromarray(state.frame.get()[::-1], 'RGBA')
+
+def benchmark(state, times=tuple(range(10)), frames=10):
+    """Time of a frame at 1 spp, rendered offscreen with the default camera at the animation times 0, 1, ..., 9.
+    At each time the first frame is not timed, the time of the others is the median. The same protocol is
+    used by the level set example of vusvna."""
+    state.params.samples_per_pixel = 1
+    medians = []
+    for t in times:
+        state.params.time = float(t)
+        state.params.subframe_index = 0
+        launch_offscreen(state)
+        samples = []
+        for k in range(frames):
+            start = time.perf_counter()
+            launch_offscreen(state)
+            samples.append(time.perf_counter() - start)
+        medians.append(1000 * float(np.median(samples)))
+    cusvna_logger.info(f"Level set benchmark ({int(state.params.width)}x{int(state.params.height)}, 1 spp, "
+                       f"{RenderingMode(int(state.params.rendering_mode)).name.lower()}, "
+                       f"{MarchingMethod(int(state.params.marching_method)).name.lower()}): "
+                       f"median {np.median(medians):.2f} ms per frame, "
+                       f"{min(medians):.2f}-{max(medians):.2f} ms over the animation")
+    return medians
+
+def add_arguments(parser):
+    parser.add_argument('--output', help="render a single image to this file instead of opening a window")
+    parser.add_argument('--time', type=float, default=0.0, help="animation time of the image (with --output)")
+    parser.add_argument('--mode', choices=[m.name.lower() for m in RenderingMode], default='shaded')
+    parser.add_argument('--method', choices=[m.name.lower() for m in MarchingMethod], default='root_window')
+    parser.add_argument('--spp', type=int, default=2, help="samples per pixel and per frame")
+    parser.add_argument('--size', type=int, nargs=2, default=(1024, 768), metavar=('WIDTH', 'HEIGHT'))
+    parser.add_argument('--benchmark', action='store_true',
+                        help="time the rendering offscreen at 1 spp over the animation, see benchmark()")
+
+#------------------------------------------------------------------------------
 # Main
 #------------------------------------------------------------------------------
 if __name__ == '__main__':
-    args = parse_example_arguments("Interval marching of animated level sets with OptiX.")
-    form, fast = args.form, args.fast
-    cusvna_logger.info(f"Setting up OptiX scene with {form.upper()} forms{' ignoring rounding errors' if fast else ''}...")
+    args = parse_example_arguments("Interval marching of animated level sets with OptiX.", add_arguments)
+    form, rounding = args.form, args.rounding
+    cusvna_logger.info(f"Setting up OptiX scene with {form.upper()} forms{rounding_description(rounding)}...")
 
     state = DynamicGeometryState()
-    state.params.width = 1024
-    state.params.height = 768
+    state.params.width, state.params.height = args.size
     state.time = 0.0
 
     buffer_format = BufferImageFormat.UCHAR4
@@ -473,6 +525,9 @@ if __name__ == '__main__':
 
     init_camera_state(state)
     init_launch_params(state)
+    state.params.rendering_mode = RenderingMode[args.mode.upper()]
+    state.params.marching_method = MarchingMethod[args.method.upper()]
+    state.params.samples_per_pixel = args.spp
 
     create_context(state)
     create_module(state)
@@ -480,6 +535,18 @@ if __name__ == '__main__':
     create_pipeline(state)
     create_sbt(state)
     create_gas(state)
+
+    if args.benchmark:
+        init_offscreen(state)
+        benchmark(state)
+        sys.exit(0)
+    elif args.output:
+        init_offscreen(state)
+        state.params.time = args.time
+        launch_offscreen(state)
+        offscreen_image(state).save(args.output)
+        cusvna_logger.info(f"Image saved to {args.output}.")
+        sys.exit(0)
 
     window, impl = init_ui("Cusvna Interval Marching", state.params.width, state.params.height)
     glfw.set_mouse_button_callback(window, mouse_button_callback)
@@ -515,7 +582,7 @@ if __name__ == '__main__':
         last_time = t0
         state.params.time = state.time
 
-        title = (f"Cusvna Interval Marching - {form.upper()}{' fast' if fast else ''} - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
+        title = (f"Cusvna Interval Marching - {form.upper()}{'' if rounding == 'native' else ' ' + rounding + ' rounding'} - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
                  f" - {MarchingMethod(int(state.params.marching_method)).name.lower()}"
                  f" - {int(state.params.samples_per_pixel)} spp - speed x{state.speed:.2f}"
                  + (" - paused" if state.paused else ""))

@@ -24,7 +24,7 @@ using AA = {'cusvna::AA<T>' if args.form == 'aa' else 'cusvna::AF1<T,3>'};
 if __name__ == "__main__":
     fname = r'f(x,y,z) = (x-2)^2(x+2)^2+(y-2)^2(y+2)^2+(z-2)^2(z+2)^2+(x^2y^2+x^2z^2+y^2z^2)+6*x*y*z-10(x^2+y^2+z^2)+22'
     logger.info(f"Generating octree for function {fname} with {args.form.upper()} forms"
-                f"{' ignoring rounding errors' if args.fast else ''}.")
+                f"{rounding_description(args.rounding)}.")
 
     do_plot = False
     nlevels = 3 if do_plot else 8
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     threads_per_block = warps_per_block * warpsize
     kname = f'octree<{warps_per_block},{warpsize}>'
     kernel, = build_module_and_extract_kernels_from_source(logger, kernel_src, (kname,),
-                                                           math_flags(default_build_options, args.fast))
+                                                           math_flags(default_build_options, args.rounding))
     assert warps_per_block <= warpsize, (warps_per_block, warpsize)
     assert threads_per_block <= kernel.max_threads_per_block, (threads_per_block, kernel.max_threads_per_block)
 

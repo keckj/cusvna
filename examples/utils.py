@@ -90,25 +90,46 @@ def without_fast_math(flags):
     return tuple(f for f in flags if not any(ff in f for ff in fast_math_flags))
 
 
-def math_flags(flags, fast):
-    """Remove fast math flags, and ignore rounding errors if fast is set (CUSVNA_IGNORE_ROUNDING, not rigorous).
-    Fast math stays forbidden in both cases: its approximate math functions break interval marching."""
-    return without_fast_math(flags) + (('-DCUSVNA_IGNORE_ROUNDING',) if fast else ())
+# rounding modes of cusvna device code (see the README): hardware directed rounding (default), directed rounding
+# emulated with error-free transformations (rigorous, slower) and ignored rounding errors (fast, not rigorous)
+rounding_modes = {
+    'native':   ((), ''),
+    'emulated': (('-DCUSVNA_EMULATED_ROUNDING',), ' with emulated rounding'),
+    'ignore':   (('-DCUSVNA_IGNORE_ROUNDING',), ' ignoring rounding errors'),
+}
 
 
-def parse_example_arguments(description):
-    """Command line of the graphical examples: affine forms and rounding mode."""
+def math_flags(flags, rounding='native'):
+    """Remove fast math flags and select the rounding mode of cusvna, see rounding_modes.
+    Fast math stays forbidden in all modes: its approximate math functions break interval marching."""
+    return without_fast_math(flags) + rounding_modes[rounding][0]
+
+
+def rounding_description(rounding):
+    return rounding_modes[rounding][1]
+
+
+def parse_example_arguments(description, add_arguments=None):
+    """Command line of the graphical examples: affine forms and rounding mode. add_arguments(parser) adds the
+    arguments specific to an example."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('form', nargs='?', default='af1', choices=('af1', 'aa'),
                         help="affine forms: af1 for cusvna::AF1 (single error term, default) or aa for cusvna::AA "
                              "(full affine arithmetic)")
-    parser.add_argument('--fast', action='store_true',
-                        help="ignore rounding errors (CUSVNA_IGNORE_ROUNDING), the results are no longer rigorous")
+    rounding = parser.add_mutually_exclusive_group()
+    rounding.add_argument('--rounding', choices=tuple(rounding_modes), default='native',
+                          help="rounding mode: native hardware directed rounding (default), emulated directed "
+                               "rounding (CUSVNA_EMULATED_ROUNDING) or ignore rounding errors "
+                               "(CUSVNA_IGNORE_ROUNDING, not rigorous)")
+    rounding.add_argument('--fast', action='store_const', dest='rounding', const='ignore',
+                          help="same as --rounding ignore, the results are no longer rigorous")
+    if add_arguments is not None:
+        add_arguments(parser)
     return parser.parse_args()
 
 
 def nvrtc_arch_flags():
-    """Target the current device, NVRTC compiles for compute_52 by default (much slower code on recent GPUs)."""
+    """Architecture flag of the current device for NVRTC."""
     from cupy.cuda import nvrtc
     cc = int(cp.cuda.Device().compute_capability)
     archs = [arch for arch in nvrtc.getSupportedArchs() if arch <= cc]

@@ -25,7 +25,33 @@ bounds than interval arithmetic on long computations. Two models are available: 
   helpers (`min`, `max`, `hypot`, `smooth_min`, ...) and rigorous predicates, in `float` and `double`.
 
 Typical applications are robust root isolation and subdivision schemes (quadtrees, octrees), ray tracing
-of implicit surfaces and level sets, and any numerical method that must not miss a solution.
+of implicit surfaces and level sets, and any numerical method that must not miss a solution. A Vulkan and
+Slang port of the AF1 forms is available as [vusvna](https://github.com/keckj/vusvna), see
+[vusvna](#vusvna).
+
+<p align="center">
+  <img src="figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
+</p>
+
+## Getting started
+
+The examples compile their CUDA kernels at runtime with [CuPy](https://cupy.dev) (NVRTC) and only need an
+NVIDIA GPU, the CUDA toolkit and Python. The ray tracing examples (`04_raytracing.py` and `05_levelset.py`)
+also need the [OptiX 7.4 SDK](https://developer.nvidia.com/designworks/optix/downloads/legacy) for
+[python-optix](https://github.com/mortacious/python-optix).
+
+```sh
+git clone --recursive https://github.com/keckj/cusvna.git
+cd cusvna
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r examples/requirements.txt
+python3 examples/02_quadtree.py   # adaptive quadtree around a 2D curve
+python3 examples/05_levelset.py   # interactive ray tracing of animated level sets (needs OptiX)
+```
+
+See [Examples](#examples) for the other scripts, [Installation](#installation) to use cusvna in your own
+kernels and [Tests](#tests) to check it on your GPU.
 
 ## Example
 
@@ -57,7 +83,8 @@ Requirements:
 
 * CUDA 11 or newer (the library uses `cuda::std` from libcu++, shipped with the CUDA toolkit),
 * C++17 (`nvcc -std=c++17`, `nvrtc --std=c++17`),
-* **no fast math**, even with `CUSVNA_IGNORE_ROUNDING`, see [Guarantees](#guarantees).
+* **no fast math**, even with `CUSVNA_IGNORE_ROUNDING`, see [Guarantees](#guarantees) and
+  [Rounding modes](#rounding-modes).
 
 With NVRTC (for instance through CuPy), pass the CUDA include directory and the root of this repository
 as include paths, see `examples/utils.py`.
@@ -147,12 +174,9 @@ For any operation, the exact real result of the computation belongs to the range
 including rounding errors. In particular `x.interval()`, `x.sign()` and the predicates are rigorous. 
 Bounds are never NaN.
 
-* **Rounding**: device code uses the directed rounding instructions of the hardware (`__fadd_ru`,
-  `__dmul_rd`, ...), which are exact and as fast as round-to-nearest ones. Rounding errors of affine
-  operations are computed exactly (TwoSum, fused multiply-add residuals) and accumulated. In host code, or
-  in device code when `CUSVNA_EMULATED_ROUNDING` is defined, everything runs in the default round-to-nearest
-  mode and outward rounding is emulated with error-free transformations, moving inexact bounds by at least
-  one ulp. Emulated rounding is 2 to 6 times slower on GPUs, see [Performance](#performance).
+* **Rounding**: bounds are rounded outward, with the directed rounding instructions of the hardware in
+  device code and with emulated directed rounding in host code, and the rounding errors of affine
+  operations are accumulated in the error term, see [Rounding modes](#rounding-modes).
 * **Nonlinear functions**: the residual `f(x) - alpha*x` is bounded with outward rounding by splitting
   the input range into pieces where `f` is convex or concave. The results of math library functions are
   assumed to be within twice the maximum error documented in the CUDA math API (see `cusvna/approx.cuh`).
@@ -174,15 +198,34 @@ These guarantees hold under the following assumptions:
   correlate them. For non-adversarial inputs the probability is about `2^-64` per comparison of two generated
   symbols of the same type.
 
-### Ignoring rounding errors
+## Rounding modes
 
-When `CUSVNA_IGNORE_ROUNDING` is defined, cusvna ignores all floating point rounding errors: directed
-operations become round-to-nearest operations, the error terms of affine operations are not computed, the
-results of math library functions are taken as exact, and operations may be contracted into fused
-multiply-adds. Approximation errors of nonlinear functions are still bounded. The results are **no longer
-rigorous**: enclosures may miss the exact result by a few ulps, and deep subdivisions may discard cells that
-contain zeros. This mode is meant for visualization, where it is up to 2 times faster, see
-[Performance](#performance).
+The rounding errors are handled in one of three ways, selected at compile time:
+
+| Mode | Selected by | Rigorous | Speed on GPUs | Use |
+|---|---|---|---|---|
+| native | default in device code | yes | reference | GPU code |
+| emulated | host code, or `CUSVNA_EMULATED_ROUNDING` in device code | yes | 2 to 6 times slower | host code, tests |
+| ignore | `CUSVNA_IGNORE_ROUNDING` | **no** | up to 2.5 times faster | visualization |
+
+* **native**: device code uses the directed rounding instructions of the hardware (`__fadd_ru`,
+  `__dmul_rd`, ...), which are exact and as fast as round-to-nearest ones. The rounding errors of affine
+  operations are computed exactly (TwoSum, fused multiply-add residuals) and accumulated in the error term,
+  and the results of math library functions are enclosed by twice their documented maximum error.
+* **emulated**: host code has no directed rounding instructions, so everything runs in the default
+  round-to-nearest mode and outward rounding is emulated with error-free transformations (TwoSum, TwoProd):
+  they detect exact operations and the sign of the rounding errors, and inexact bounds are moved outward by
+  at least one ulp. This is the only mode of host code. Defining `CUSVNA_EMULATED_ROUNDING` selects it in
+  device code too, which gives the same results as host code but is only useful for testing.
+* **ignore**: when `CUSVNA_IGNORE_ROUNDING` is defined, cusvna ignores all floating point rounding errors:
+  directed operations become round-to-nearest operations, the error terms of affine operations are not
+  computed, the results of math library functions are taken as exact, and operations may be contracted
+  into fused multiply-adds. Approximation errors of nonlinear functions are still bounded. The results are
+  **no longer rigorous**: enclosures may miss the exact result by a few ulps, and deep subdivisions may
+  discard cells that contain zeros. This mode is meant for visualization.
+
+The examples select the mode with `--rounding native|emulated|ignore`, `--fast` being a shortcut for
+`--rounding ignore`. See [Performance](#performance) for the timings of the three modes.
 
 **Fast math is strictly discouraged, even with `CUSVNA_IGNORE_ROUNDING`.** Its approximate math functions
 (`__sinf`, `__expf`, ...) are far less accurate than the CUDA math library and break the enclosures: with
@@ -202,49 +245,81 @@ The `examples` directory contains Python scripts that compile CUDA kernels at ru
 | `04_raytracing.py` | ray tracing of implicit surfaces with OptiX |
 | `05_levelset.py` | interactive OptiX viewer of level sets |
 
+With the virtual environment of [Getting started](#getting-started) activated:
+
 ```sh
-git clone --recursive https://github.com/keckj/cusvna.git
-pip install -r cusvna/examples/requirements.txt
-python cusvna/examples/02_quadtree.py            # AF1 forms
-python cusvna/examples/02_quadtree.py aa         # AA forms
-python cusvna/examples/02_quadtree.py --fast     # AF1 forms, rounding errors ignored
+python3 examples/02_quadtree.py                       # AF1 forms
+python3 examples/02_quadtree.py aa                    # AA forms
+python3 examples/02_quadtree.py --rounding emulated   # AF1 forms, emulated rounding
+python3 examples/02_quadtree.py --fast                # AF1 forms, rounding errors ignored
 ```
 
 `02_quadtree.py` to `05_levelset.py` take an optional `af1` (default) or `aa` argument selecting the affine
-forms, and a `--fast` option that defines `CUSVNA_IGNORE_ROUNDING` (see
-[Ignoring rounding errors](#ignoring-rounding-errors)). The examples never use fast math. The OptiX examples
-require the NVIDIA OptiX SDK and the `python-optix` submodule.
+forms, and a `--rounding` option selecting the [rounding mode](#rounding-modes) (`--fast` for
+`--rounding ignore`). The examples never use fast math. The OptiX examples require the OptiX SDK and the
+`python-optix` submodule.
+
+`05_levelset.py` opens a window, or renders offscreen with `--output image.png` (see `--help` for the time,
+mode, method, samples and size). `05_levelset.py --benchmark` times the rendering offscreen at 1 spp over the
+animation, with the same protocol as the level set example of vusvna. The level sets are found by marching
+along the rays with affine forms of the ray parameter, either by a sign test on the interval of the function
+or with a root window that skips the parts of the ray where the affine form proves that there is no root.
+The shapes cast shadows and are antialiased by accumulating jittered samples while the scene is paused.
+
+| Key | Action |
+|---|---|
+| `ENTER` | rendering mode: shaded, normals, marching steps |
+| `M` | marching method: sign test, root window |
+| `A` | samples per pixel |
+| `SPACE` | pause the animation (images accumulate while paused) |
+| `+`/`-`, `UP`/`DOWN` | animation speed |
+| left / right mouse button, wheel | orbit, look around, zoom |
+| `Q`, `ESC` | quit |
 
 ## Performance
 
-Time of the evaluations on an RTX 5090 (float), with hardware directed rounding (default) and with
-`CUSVNA_EMULATED_ROUNDING`:
+Time of the evaluations on an RTX 5090 (float) in the three [rounding modes](#rounding-modes), for AF1 and
+AA forms. `05_levelset.py` is timed with `--benchmark` (1024x768, 1 sample per pixel, root window marching,
+median over the animation).
 
-| Benchmark | AA | AF1 | AA, emulated rounding | AF1, emulated rounding |
-|---|---|---|---|---|
-| `02_quadtree.py`, level 25 (126M active cells) | 3.0 ms | 2.4 ms | 6.7 ms | 5.9 ms |
-| `03_octtree.py`, level 11 (20M active cells) | 4.1 ms | 1.7 ms | 11.9 ms | 9.1 ms |
-| `03_octtree.py`, level 12 (81M active cells) | 16.4 ms | 6.8 ms | 48 ms | 36 ms |
-| `05_levelset.py`, 1024x768, 1 sample per pixel | 8.5-10 ms | 7-9 ms | 29-31 ms | 25-26 ms |
+| Benchmark | AF1 native | AF1 emulated | AF1 ignore | AA native | AA emulated | AA ignore |
+|---|---|---|---|---|---|---|
+| `02_quadtree.py`, level 22 | 0.24 ms | 0.58 ms | 0.12 ms | 0.29 ms | 0.64 ms | 0.12 ms |
+| `02_quadtree.py`, level 25 | 2.4 ms | 6.3 ms | 0.70 ms | 2.9 ms | 7.0 ms | 0.74 ms |
+| `03_octtree.py`, level 11 (20M active cells) | 1.7 ms | 9.4 ms | 0.70 ms | 4.2 ms | 12 ms | 3.2 ms |
+| `03_octtree.py`, level 12 (81M active cells) | 7.0 ms | 37 ms | 2.8 ms | 17 ms | 48 ms | 13 ms |
+| `05_levelset.py`, shaded | 7.2 ms | 22 ms | 6.3 ms | 8.3 ms | 24 ms | 6.9 ms |
+| `05_levelset.py`, marching steps | 4.4 ms | 13.3 ms | 3.7 ms | 5.1 ms | 14.6 ms | 4.2 ms |
 
-Both models produce the same numbers of active cells up to a few cells and the same images.
-
-With `CUSVNA_IGNORE_ROUNDING` (`--fast` option of the examples):
-
-| Benchmark | AF1 | AF1, rounding ignored | AA | AA, rounding ignored |
-|---|---|---|---|---|
-| `02_quadtree.py`, level 22 (9.5M / 8.4M active cells) | 0.29 ms | 0.14 ms | 0.35 ms | 0.16 ms |
-| `03_octtree.py`, level 11 (20M active cells) | 1.9 ms | 0.8 ms | 4.5 ms | 3.4 ms |
-| `03_octtree.py`, level 12 (81M active cells) | 7.3 ms | 3.0 ms | 18 ms | 13.3 ms |
-| `05_levelset.py`, 1024x768, 1 sample per pixel | 8-9 ms | 7-8 ms | 9-11 ms | 7.3-8 ms |
+Both models produce the same numbers of active cells up to a few cells and the same images. Marching with
+the sign test instead of the root window is about 1.5 times slower.
 
 Ignoring rounding errors keeps fewer cells in the quadtree (8.4M instead of 9.5M at level 22, 57M instead
 of 126M at level 25): in single precision, the rounding errors of deep levels are larger than the cells.
 The octree keeps 0.02% fewer cells and the images of `05_levelset.py` are the same.
 
-The examples compile their device code for the architecture of the GPU (`-arch=compute_XY`, see
-`nvrtc_arch_flags` in `examples/utils.py`): NVRTC targets `compute_52` by default, which made the
-level set example about 30% slower on this GPU.
+## vusvna
+
+[vusvna](https://github.com/keckj/vusvna) is a port of cusvna to Vulkan, as a [Slang](https://shader-slang.org)
+module usable in any shader stage, with the same examples run by [slangpy](https://github.com/shader-slang/slangpy).
+It is a partial port:
+
+* it only provides the AF1 forms (Slang generics cannot express the symbol types of `cusvna::AA`),
+* it works in single precision only,
+* Vulkan has no directed rounding and the driver may fuse operations, so vusvna bounds rounding errors with
+  the standard model of floating point arithmetic instead of exact error terms; `VUSVNA_IGNORE_ROUNDING`
+  ignores them as `CUSVNA_IGNORE_ROUNDING` does,
+* some functions are missing (`asin`, `acos`, the hyperbolic functions, `erf`, `tgamma`, ...).
+
+The two libraries give the same images and nearly the same cells. On the same RTX 5090, with the same
+scenes and benchmark protocol:
+
+| Benchmark | vusvna | cusvna AF1 | cusvna AA | vusvna, ignore | cusvna AF1, ignore | cusvna AA, ignore |
+|---|---|---|---|---|---|---|
+| `03_octtree.py`, level 11 | 1.0 ms | 1.7 ms | 4.2 ms | 0.69 ms | 0.70 ms | 3.2 ms |
+| `03_octtree.py`, level 12 | 4.2 ms | 7.0 ms | 17 ms | 3.0 ms | 2.8 ms | 13 ms |
+| `05_levelset.py`, shaded | 2.2 ms | 7.2 ms | 8.3 ms | 1.6 ms | 6.3 ms | 6.9 ms |
+| `05_levelset.py`, marching steps | 1.5 ms | 4.4 ms | 5.1 ms | 1.1 ms | 3.7 ms | 4.2 ms |
 
 ## Tests
 
