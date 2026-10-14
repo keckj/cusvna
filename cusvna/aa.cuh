@@ -179,6 +179,14 @@ namespace op {
     static constexpr int NORMCDF = 35;
     static constexpr int SINPI = 36;
     static constexpr int COSPI = 37;
+    static constexpr int ATAN2 = 38;
+    static constexpr int FLOOR = 39;
+    static constexpr int CEIL = 40;
+    static constexpr int TRUNC = 41;
+    static constexpr int ROUND = 42;
+    static constexpr int RINT = 43;
+    static constexpr int FRACT = 44;
+    static constexpr int FMOD = 45;
 }
 
 template <typename AAType, int opcode>
@@ -266,6 +274,16 @@ template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is.
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::NORMCDF> normcdf(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::SINPI> sinpi(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::COSPI> cospi(const AA<T,Is...>& x);
+
+/* Discontinuous functions: exact when the input range does not cross a discontinuity, else the range of
+   the result is enclosed (without correlation with the input). fract(x) = x - floor(x). */
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::FLOOR> floor(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::CEIL>  ceil(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::TRUNC> trunc(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::ROUND> round(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::RINT>  rint(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::FRACT> fract(const AA<T,Is...>& x);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::FMOD>  fmod(const AA<T,Is...>& x, const detail::identity_t<T>& c);
 
 
 /* other operators */
@@ -1107,6 +1125,43 @@ __host__ __device__ unop_result_t<AA<T,Is...>, op::COSPI> cospi(const AA<T,Is...
     return impl::apply_approx<op::COSPI>(x, detail::approx_cospi(x.affine_interval(), x.err()));
 }
 
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::FLOOR> floor(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::FLOOR>(x, detail::approx_step<detail::floor_fn>(x.interval()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::CEIL> ceil(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::CEIL>(x, detail::approx_step<detail::ceil_fn>(x.interval()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::TRUNC> trunc(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::TRUNC>(x, detail::approx_step<detail::trunc_fn>(x.interval()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::ROUND> round(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::ROUND>(x, detail::approx_step<detail::round_fn>(x.interval()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::RINT> rint(const AA<T,Is...>& x) {
+    return impl::apply_approx<op::RINT>(x, detail::approx_step<detail::rint_fn>(x.interval()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::FRACT> fract(const AA<T,Is...>& x) {
+    /* the affine case holds for the full range, the error term is propagated as is */
+    const Interval<T> X = x.interval();
+    return impl::apply_approx<op::FRACT>(x, detail::approx_fract(X, x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::FMOD> fmod(const AA<T,Is...>& x, const detail::identity_t<T>& c) {
+    return impl::apply_approx<op::FMOD>(x, detail::approx_fmod(x.interval(), x.err(), T(c)), detail::bits(T(c)));
+}
 
 template <typename T, typename... Is>
 __host__ __device__ void AA<T,Is...>::print() const {

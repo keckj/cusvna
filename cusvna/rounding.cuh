@@ -98,11 +98,12 @@ namespace detail {
     template <typename T>
     __host__ __device__ inline T div_rn(const T a, const T b) { return a / b; }
 
+    /* unlike ::fmin and ::fmax, nans propagate: they mean that a bound could not be computed */
     template <typename T>
-    __host__ __device__ inline T fmin(const T a, const T b) { return (a < b ? a : b); }
+    __host__ __device__ inline T fmin(const T a, const T b) { return (a < b || a != a ? a : b); }
 
     template <typename T>
-    __host__ __device__ inline T fmax(const T a, const T b) { return (a > b ? a : b); }
+    __host__ __device__ inline T fmax(const T a, const T b) { return (a > b || a != a ? a : b); }
 
     /* upper bound of |c - exact| where c is a result of an operation with an error of at most ulps ulp(s) */
     template <typename T>
@@ -224,7 +225,11 @@ namespace detail {
     __host__ __device__ inline R<T> enclose(const T fx, const int ulps) { return R<T>(down(fx, ulps), up(fx, ulps)); }
 
     template <typename T>
-    __host__ __device__ inline R<T> hull(const R<T>& x, const R<T>& y) { return R<T>(fmin(x.a, y.a), fmax(x.b, y.b)); }
+    __host__ __device__ inline R<T> join(const R<T>& x, const R<T>& y) { 
+        /* nans propagate, they mean that an enclosure could not be computed */
+        if (is_nan(x.a) || is_nan(x.b) || is_nan(y.a) || is_nan(y.b)) { return R<T>(quiet_nan<T>(), quiet_nan<T>()); }
+        return R<T>(fmin(x.a, y.a), fmax(x.b, y.b)); 
+    }
 
     template <typename T>
     __host__ __device__ inline R<T> operator+(const R<T>& x, const R<T>& y) { return R<T>(add_down(x.a, y.a), add_up(x.b, y.b)); }

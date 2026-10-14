@@ -55,7 +55,11 @@ __device__ bool may_contain_root(const Interval& X, const Interval& Y) {
 | `hypot(x, y)`, `hypot(x, y, z)`, `norm3d`, `rhypot`, `rnorm3d` | |
 | `fma(x, y, z)`, `lerp(a, b, t)`, `smoothstep(e0, e1, x)` | |
 | `smooth_min(a, b, k)`, `smooth_max(a, b, k)` | polynomial smooth minimum of distances |
+| `atan2(y, x)` | whole range `[-pi, pi]` when the input box meets the branch cut `y = 0, x <= 0` |
+| `pow(x, y)`, `pow(c, y)` with an affine exponent | `exp(y*log(x))`, for `x > 0` |
+| `floor`, `ceil`, `trunc`, `round`, `rint`, `fract`, `fmod(x, c)` | exact (`fract` and `fmod` stay correlated with `x`) when no discontinuity is crossed, else the range of the result |
 | `certainly_lt`, `certainly_le`, `certainly_gt`, `certainly_ge`, `possibly_zero` | rigorous predicates |
+| `hull`, `intersect`, `contains`, `subset`, `is_empty` | on `cusvna::Interval` |
 | `x.interval()`, `x.sign()`, `x.radius()`, `x.is_entire()` | |
 
 These cover all the operations of [libaffa](https://github.com/ogay/libaffa), which is used as a reference

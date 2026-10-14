@@ -125,7 +125,7 @@ namespace detail {
         const R<T> Fq = fn.F(q);
 
         if (curvature == 0) {
-            return hull(Fp, Fq) - A * R<T>(p, q);
+            return join(Fp, Fq) - A * R<T>(p, q);
         }
 
         /* convex: g is maximal at an endpoint, f(x) >= f(u) + f'(u)(x-u) for all x
@@ -154,7 +154,7 @@ namespace detail {
         if (X.a >= T(0)) {
             return residual_piece(fn, alpha, X.a, X.b, curvature_pos);
         }
-        return hull(residual_piece(fn, alpha, X.a, T(0), curvature_neg),
+        return join(residual_piece(fn, alpha, X.a, T(0), curvature_neg),
                     residual_piece(fn, alpha, T(0), X.b, curvature_pos));
     }
 
@@ -184,7 +184,7 @@ namespace detail {
             }
             if (S.a > X.b) {
                 const R<T> piece = residual_piece(fn, alpha, cursor, X.b, fn.curvature(m-1));
-                g = (first ? piece : hull(g, piece));
+                g = (first ? piece : join(g, piece));
                 return true;
             }
             const int kind = fn.kind(m);
@@ -197,11 +197,11 @@ namespace detail {
             /* inflection point, f is monotonic around S */
             if (S.a > cursor) {
                 const R<T> piece = residual_piece(fn, alpha, cursor, S.a, fn.curvature(m-1));
-                g = (first ? piece : hull(g, piece));
+                g = (first ? piece : join(g, piece));
                 first = false;
             }
             const R<T> sliver = residual_piece(fn, alpha, fmax(S.a, cursor), fmin(S.b, X.b), 0);
-            g = (first ? sliver : hull(g, sliver));
+            g = (first ? sliver : join(g, sliver));
             first = false;
             cursor = S.b;
             if (cursor >= X.b) {
@@ -1047,6 +1047,57 @@ namespace detail {
     
     template <typename T>
     __host__ __device__ inline Approx<T> approx_cospi(const R<T>& X, const T err) { return approx_bounded_trigo<cospi_fn>(X, err); }
+
+
+    /*** discontinuous functions, X is the full range of the input (including the error term) ***/
+
+    struct floor_fn { template <typename T> __host__ __device__ T operator()(const T x) const { return ::floor(x); } };
+    struct ceil_fn  { template <typename T> __host__ __device__ T operator()(const T x) const { return ::ceil(x); } };
+    struct trunc_fn { template <typename T> __host__ __device__ T operator()(const T x) const { return ::trunc(x); } };
+    struct round_fn { template <typename T> __host__ __device__ T operator()(const T x) const { return ::round(x); } };
+    struct rint_fn  { template <typename T> __host__ __device__ T operator()(const T x) const { return ::rint(x); } };
+
+    /* constant approximation enclosing [lo, hi] */
+    template <typename T>
+    __host__ __device__ inline Approx<T> make_range(const T lo, const T hi) {
+        if (!is_finite(lo) || !is_finite(hi)) { return Approx<T>::make_entire(); }
+        const T m = add_rn(mul_rn(lo, T(0.5)), mul_rn(hi, T(0.5)));
+        return Approx<T>{T(0), m, fmax(sub_up(hi, m), sub_up(m, lo)), T(0), false};
+    }
+
+    /* non-decreasing integer valued functions, exact (and constant) when X does not cross a discontinuity */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_step(const R<T>& X) {
+        const Fn fn;
+        return make_range(fn(X.a), fn(X.b));
+    }
+    
+    /* x - floor(x), exactly x - n when X does not contain an integer other than its lower bound */
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_fract(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const T n = ::floor(X.a);
+        if (n == ::floor(X.b)) {
+            return Approx<T>::make_affine(T(1), -n, err);
+        }
+        return make_range(T(0), T(1));
+    }
+    
+    /* fmod(x, c) = x - trunc(x/c)*c, exactly x - n*c when trunc(x/c) = n is constant over X */
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_fmod(const R<T>& X, const T err, const T c) {
+        if (!is_finite(X) || !is_finite(c) || c == T(0)) { return Approx<T>::make_entire(); }
+        const R<T> Q = X / point(c);
+        const T n = ::trunc(Q.a);
+        if (n == ::trunc(Q.b)) {
+            const T p = mul_rn(n, c);
+            const T e = (n == T(0) ? T(0) : (::fabs(p) < fp<T>::tiny() ? error_bound(p) : T(::fabs(two_prod_error(n, c, p)))));
+            return Approx<T>{T(1), -p, e, err, false};
+        }
+        /* the result has the sign of x and is smaller than |c| in magnitude */
+        const T m = ::fabs(c);
+        return make_range(X.a >= T(0) ? T(0) : -m, X.b <= T(0) ? T(0) : m);
+    }
 
 } /* end of namespace detail */
 } /* end of namespace cusvna */

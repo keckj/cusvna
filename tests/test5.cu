@@ -34,6 +34,7 @@ LD lerp(const LD a, const LD b, const LD t) { return a + t*(b - a); }
 LD smoothstep(const LD e0, const LD e1, const LD x) { const LD t = clamp((x - e0)/(e1 - e0), 0, 1); return t*t*(3 - 2*t); }
 LD smooth_min(const LD a, const LD b, const LD k) { const LD h = max(k - std::fabs(a - b), 0) / k; return min(a, b) - h*h*k/4; }
 LD smooth_max(const LD a, const LD b, const LD k) { return -smooth_min(-a, -b, k); }
+LD fract(const LD x)         { return x - std::floor(x); }
 
 static int failures = 0;
 static int checks = 0;
@@ -207,6 +208,15 @@ void run() {
     check_unary<T>("normcdf",    [](auto x, auto t) { return normcdf(x); }, always, 64);
     check_unary<T>("sinpi",      [](auto x, auto t) { return sinpi(x); }, always, 24);
     check_unary<T>("cospi",      [](auto x, auto t) { return cospi(x); }, always, 24);
+    check_unary<T>("floor",      [](auto x, auto t) { return floor(x); }, always, 0);
+    check_unary<T>("ceil",       [](auto x, auto t) { return ceil(x); }, always, 0);
+    check_unary<T>("trunc",      [](auto x, auto t) { return trunc(x); }, always, 0);
+    check_unary<T>("round",      [](auto x, auto t) { return round(x); }, always, 0);
+    check_unary<T>("rint",       [](auto x, auto t) { return rint(x); }, always, 0);
+    check_unary<T>("fract",      [](auto x, auto t) { return fract(x); }, always, 4);
+    check_unary<T>("fmod(x, 0.75)",  [](auto x, auto t) { using S = decltype(t); return fmod(x, S(0.75)); }, always, 4);
+    check_unary<T>("fmod(x, -1.5)",  [](auto x, auto t) { using S = decltype(t); return fmod(x, S(-1.5)); }, always, 4);
+    check_unary<T>("fract(3x) + floor(3x)", [](auto x, auto t) { using S = decltype(t); return fract(x*S(3)) + floor(x*S(3)); }, always, 8);
 
     /* composed expressions */
     const I U(-1, 1), V(0, 1), W(1, 2);
@@ -264,6 +274,43 @@ void run() {
     check("log1p(expm1(x))",    [](auto x, auto y, auto t) { return log1p(expm1(x)); }, V, V);
     check("cbrt(x*y) - rcbrt(y)",[](auto x, auto y, auto t) { return cbrt(x*y) - rcbrt(y); }, U, W);
     
+    /* atan2 on boxes in all quadrants, across the axes, the branch cut and the origin */
+    const T centers[] = { T(-2), T(-0.75), T(-0.1), T(0), T(0.1), T(0.75), T(2) };
+    const T radii[] = { T(0), T(0.05), T(0.5) };
+    for (const T cx : centers) {
+        for (const T cy : centers) {
+            for (const T r : radii) {
+                const I X(cx - r, cx + r);
+                const I Y(cy - r, cy + r);
+                check("atan2(y, x)", [](auto x, auto y, auto t) { return atan2(y, x); }, X, Y);
+            }
+        }
+    }
+    check("atan2(y, 0.5)",      [](auto x, auto y, auto t) { using S = decltype(t); return atan2(y, S(0.5)); }, U, U);
+    check("atan2(-1, x)",       [](auto x, auto y, auto t) { using S = decltype(t); return atan2(S(-1), x); }, U, U);
+    check("atan2(x*y, x+2)",    [](auto x, auto y, auto t) { using S = decltype(t); return atan2(x*y, x + S(2)); }, U, U);
+    check("pow(x, y)",          [](auto x, auto y, auto t) { return pow(x, y); }, W, U);
+    check("pow(x, x*y)",        [](auto x, auto y, auto t) { return pow(x, x*y); }, W, U);
+    check("pow(2, y)",          [](auto x, auto y, auto t) { using S = decltype(t); return pow(S(2), y); }, U, U);
+    check("pow(0.3, x+y)",      [](auto x, auto y, auto t) { using S = decltype(t); return pow(S(0.3), x + y); }, U, U);
+
+    {
+        /* atan2 of the same arguments cancels */
+        const auto x = cusvna::AA<T>::template from_interval<0>(W);
+        const auto y = cusvna::AA<T>::template from_interval<1>(U);
+        ++checks;
+        if (!((atan2(y, x) - atan2(y, x)).affine_radius() == T(0))) { fail(std::string(type_name<T>()) + " atan2 does not cancel"); }
+        
+        /* interval utilities */
+        checks += 6;
+        if (!(cusvna::hull(I(0, 1), I(3, 4)).a == T(0) && cusvna::hull(I(0, 1), I(3, 4)).b == T(4))) { fail("hull"); }
+        if (!cusvna::is_empty(cusvna::intersect(I(0, 1), I(3, 4)))) { fail("intersect empty"); }
+        if (!(cusvna::intersect(I(0, 2), I(1, 4)).a == T(1) && cusvna::intersect(I(0, 2), I(1, 4)).b == T(2))) { fail("intersect"); }
+        if (!cusvna::contains(I(0, 1), T(0.5)) || cusvna::contains(I(0, 1), T(2))) { fail("contains"); }
+        if (!cusvna::subset(I(1, 2), I(0, 3)) || cusvna::subset(I(0, 3), I(1, 2))) { fail("subset"); }
+        if (!(cusvna::hull(cusvna::intersect(I(0, 1), I(3, 4)), I(5, 6)).a == T(5))) { fail("hull with empty"); }
+    }
+
     {
         /* min(x, y) + max(x, y) cancels to x + y */
         const auto x = cusvna::AA<T>::template from_interval<0>(U);

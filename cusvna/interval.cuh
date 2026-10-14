@@ -31,6 +31,31 @@ namespace cusvna {
         }
     };
 
+    /* an interval [a,b] with a > b (or nan bounds) is empty */
+    template <typename T>
+    __host__ __device__ bool is_empty(const Interval<T>& x) { return !(x.a <= x.b); }
+    
+    template <typename T>
+    __host__ __device__ bool contains(const Interval<T>& x, const T& v) { return (x.a <= v) && (v <= x.b); }
+    
+    /* x is a subset of y */
+    template <typename T>
+    __host__ __device__ bool subset(const Interval<T>& x, const Interval<T>& y) { return is_empty(x) || ((y.a <= x.a) && (x.b <= y.b)); }
+    
+    /* smallest interval containing x and y */
+    template <typename T>
+    __host__ __device__ Interval<T> hull(const Interval<T>& x, const Interval<T>& y) {
+        if (is_empty(x)) { return y; }
+        if (is_empty(y)) { return x; }
+        return Interval<T>(x.a < y.a ? x.a : y.a, x.b > y.b ? x.b : y.b);
+    }
+    
+    /* intersection of x and y, possibly empty */
+    template <typename T>
+    __host__ __device__ Interval<T> intersect(const Interval<T>& x, const Interval<T>& y) {
+        return Interval<T>(x.a > y.a ? x.a : y.a, x.b < y.b ? x.b : y.b);
+    }
+
 #ifndef __CUDACC_RTC__
     template <typename T>
     __host__ std::ostream& operator<<(std::ostream& os, const Interval<T>& interval) {
