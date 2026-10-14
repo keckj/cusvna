@@ -229,36 +229,68 @@ template <typename T, typename... Is>
 __host__ __device__ auto atan2(const detail::identity_t<T>& y, const AA<T,Is...>& x) { return atan2(AA<T>(T(y)), x); }
 
 
-/* fmod(x, y) = x - trunc(x/y)*y with an affine divisor y: exactly x - n*y (correlated with x and y) when
-   trunc(x/y) = n is constant over the input box, else the range of the result. Entire if y may be 0. */
-template <typename T, typename... Is, typename... Js>
-__host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA> fmod(const AA<T,Is...>& x, const AA<T,Js...>& y) {
-    using Result = detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA>;
-    using NewSymbol = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA>;
-    const detail::tag_t new_tag = y.content_hash(x.content_hash(impl::seed(op::FMOD_AA)));
-    const Interval<T> X = x.interval();
-    const Interval<T> Y = y.interval();
-    Result out(T(0));
-    if (!detail::is_finite(X) || !detail::is_finite(Y) || (Y.a <= T(0) && Y.b >= T(0))) {
-        out.set_entire();
+namespace impl {
+    /* x - n*y with n = Fn(x/y) (trunc for fmod, rint for remainder) and an affine divisor y: exactly 
+       x - n*y (correlated with x and y) when n is constant over the input box, else the range of the
+       result. Entire if y may be 0. The range of n is stored in quo_lo and quo_hi if not null. */
+    template <typename Fn, int opcode, typename T, typename... Is, typename... Js>
+    __host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, opcode> reduction(const AA<T,Is...>& x, const AA<T,Js...>& y,
+            int* quo_lo, int* quo_hi) {
+        using Result = detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, opcode>;
+        using NewSymbol = detail::binop_type_id<AA<T,Is...>, AA<T,Js...>, opcode>;
+        const detail::tag_t new_tag = y.content_hash(x.content_hash(seed(opcode)));
+        const Interval<T> X = x.interval();
+        const Interval<T> Y = y.interval();
+        Result out(T(0));
+        if (!detail::is_finite(X) || !detail::is_finite(Y) || (Y.a <= T(0) && Y.b >= T(0))) {
+            detail::integer_range(Interval<T>(-detail::infinity<T>(), detail::infinity<T>()), quo_lo, quo_hi);
+            out.set_entire();
+            return out;
+        }
+        const Fn fn;
+        const Interval<T> Q = detail::operator/(X, Y);
+        const T n = fn(Q.a);
+        detail::integer_range(Interval<T>(n, fn(Q.b)), quo_lo, quo_hi);
+        if (n == fn(Q.b)) {
+            return collapse<Result, NewSymbol>(x - y * n, new_tag);
+        }
+        const T M = detail::fmax(T(::fabs(Y.a)), T(::fabs(Y.b)));
+        const AA<T> range = constant_form(detail::remainder_range(fn, X, M));
+        out.b() = range.b();
+        out.template x<NewSymbol>() = range.err();
+        out.template tag<NewSymbol>() = new_tag;
         return out;
     }
-    const Interval<T> Q = detail::operator/(X, Y);
-    const T n = ::trunc(Q.a);
-    if (n == ::trunc(Q.b)) {
-        return impl::collapse<Result, NewSymbol>(x - y * n, new_tag);
-    }
-    /* the result has the sign of x and is smaller than |y| in magnitude */
-    const T M = detail::fmax(T(::fabs(Y.a)), T(::fabs(Y.b)));
-    const AA<T> range = impl::constant_form(Interval<T>(X.a >= T(0) ? T(0) : -M, X.b <= T(0) ? T(0) : M));
-    out.b() = range.b();
-    out.template x<NewSymbol>() = range.err();
-    out.template tag<NewSymbol>() = new_tag;
-    return out;
+}
+
+/* fmod(x, y) = x - trunc(x/y)*y with an affine divisor y */
+template <typename T, typename... Is, typename... Js>
+__host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::FMOD_AA> fmod(const AA<T,Is...>& x, const AA<T,Js...>& y) {
+    return impl::reduction<detail::trunc_fn, op::FMOD_AA>(x, y, nullptr, nullptr);
 }
 
 template <typename T, typename... Js>
 __host__ __device__ auto fmod(const detail::identity_t<T>& x, const AA<T,Js...>& y) { return fmod(AA<T>(T(x)), y); }
+
+/* remainder(x, y) = x - rint(x/y)*y and remquo with an affine divisor y, see remquo(x, c, quo_lo, quo_hi) */
+template <typename T, typename... Is, typename... Js>
+__host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::REMAINDER_AA> remquo(const AA<T,Is...>& x, const AA<T,Js...>& y,
+        int* quo_lo, int* quo_hi) {
+    return impl::reduction<detail::rint_fn, op::REMAINDER_AA>(x, y, quo_lo, quo_hi);
+}
+
+template <typename T, typename... Is, typename... Js>
+__host__ __device__ detail::binop_result_t<AA<T,Is...>, AA<T,Js...>, op::REMAINDER_AA> remainder(const AA<T,Is...>& x, const AA<T,Js...>& y) {
+    return remquo(x, y, nullptr, nullptr);
+}
+
+template <typename T, typename... Js>
+__host__ __device__ auto remainder(const detail::identity_t<T>& x, const AA<T,Js...>& y) { return remainder(AA<T>(T(x)), y); }
+
+template <typename T, typename... Js>
+__host__ __device__ auto remquo(const detail::identity_t<T>& x, const AA<T,Js...>& y, int* quo_lo, int* quo_hi) { 
+    return remquo(AA<T>(T(x)), y, quo_lo, quo_hi);
+}
 
 /* x^y = exp(y*log(x)) for x > 0 (entire otherwise) */
 template <typename T, typename... Is, typename... Js>

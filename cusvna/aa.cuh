@@ -190,6 +190,9 @@ namespace op {
     static constexpr int FMOD_AA = 46;
     static constexpr int TGAMMA = 47;
     static constexpr int LGAMMA = 48;
+    static constexpr int MODF = 49;
+    static constexpr int REMAINDER = 50;
+    static constexpr int REMAINDER_AA = 51;
 }
 
 template <typename AAType, int opcode>
@@ -287,6 +290,15 @@ template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is.
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::RINT>  rint(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::FRACT> fract(const AA<T,Is...>& x);
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::FMOD>  fmod(const AA<T,Is...>& x, const detail::identity_t<T>& c);
+
+/* modf(x, &ip) returns x - trunc(x) and stores trunc(x) in ip (if not null) */
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::MODF> modf(const AA<T,Is...>& x, unop_result_t<AA<T,Is...>, op::TRUNC>* ip);
+
+/* remainder(x, c) = x - rint(x/c)*c, remquo also returns the range [quo_lo, quo_hi] of the integer 
+   quotient rint(x/c) (the full quotient, not only its low bits as in C), saturated to the int range.
+   quo_lo == quo_hi means that the quotient is known, the remainder is then exactly x - quo*c. */
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::REMAINDER> remainder(const AA<T,Is...>& x, const detail::identity_t<T>& c);
+template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::REMAINDER> remquo(const AA<T,Is...>& x, const detail::identity_t<T>& c, int* quo_lo, int* quo_hi);
 
 /* gamma function and logarithm of its absolute value, for x > 0 only (entire otherwise) */
 template <typename T, typename... Is> __host__ __device__ unop_result_t<AA<T,Is...>, op::TGAMMA> tgamma(const AA<T,Is...>& x);
@@ -1168,6 +1180,25 @@ __host__ __device__ unop_result_t<AA<T,Is...>, op::FRACT> fract(const AA<T,Is...
 template <typename T, typename... Is>
 __host__ __device__ unop_result_t<AA<T,Is...>, op::FMOD> fmod(const AA<T,Is...>& x, const detail::identity_t<T>& c) {
     return impl::apply_approx<op::FMOD>(x, detail::approx_fmod(x.interval(), x.err(), T(c)), detail::bits(T(c)));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::MODF> modf(const AA<T,Is...>& x, unop_result_t<AA<T,Is...>, op::TRUNC>* ip) {
+    if (ip) { *ip = trunc(x); }
+    return impl::apply_approx<op::MODF>(x, detail::approx_modf(x.interval(), x.err()));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::REMAINDER> remquo(const AA<T,Is...>& x, const detail::identity_t<T>& c, int* quo_lo, int* quo_hi) {
+    Interval<T> quotient;
+    const detail::Approx<T> A = detail::approx_reduction<detail::rint_fn>(x.interval(), x.err(), T(c), &quotient);
+    detail::integer_range(quotient, quo_lo, quo_hi);
+    return impl::apply_approx<op::REMAINDER>(x, A, detail::bits(T(c)));
+}
+
+template <typename T, typename... Is>
+__host__ __device__ unop_result_t<AA<T,Is...>, op::REMAINDER> remainder(const AA<T,Is...>& x, const detail::identity_t<T>& c) {
+    return remquo(x, c, nullptr, nullptr);
 }
 
 template <typename T, typename... Is>

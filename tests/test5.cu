@@ -220,6 +220,11 @@ void run() {
     check_unary<T>("fract",      [](auto x, auto t) { return fract(x); }, always, 4);
     check_unary<T>("fmod(x, 0.75)",  [](auto x, auto t) { using S = decltype(t); return fmod(x, S(0.75)); }, always, 4);
     check_unary<T>("fmod(x, -1.5)",  [](auto x, auto t) { using S = decltype(t); return fmod(x, S(-1.5)); }, always, 4);
+    check_unary<T>("modf",       [](auto x, auto t) { decltype(trunc(x)) ip; return modf(x, &ip); }, always, 4);
+    check_unary<T>("modf ip",    [](auto x, auto t) { decltype(trunc(x)) ip; modf(x, &ip); return ip; }, always, 0);
+    check_unary<T>("modf(3x) + ip", [](auto x, auto t) { using S = decltype(t); decltype(trunc(x*S(3))) ip; auto f = modf(x*S(3), &ip); return f + ip; }, always, 8);
+    check_unary<T>("remainder(x, 0.75)", [](auto x, auto t) { using S = decltype(t); return remainder(x, S(0.75)); }, always, 4);
+    check_unary<T>("remainder(x, -1.5)", [](auto x, auto t) { using S = decltype(t); return remainder(x, S(-1.5)); }, always, 4);
     check_unary<T>("fract(3x) + floor(3x)", [](auto x, auto t) { using S = decltype(t); return fract(x*S(3)) + floor(x*S(3)); }, always, 8);
 
     /* composed expressions */
@@ -299,6 +304,11 @@ void run() {
     check("fmod(x+5, -y)",      [](auto x, auto y, auto t) { using S = decltype(t); return fmod(x + S(5), -y); }, I(T(0.1), T(0.2)), I(2, T(2.05)));
     check("fmod(-x-5, y) range",[](auto x, auto y, auto t) { using S = decltype(t); return fmod(-x - S(5), y); }, V, I(T(1.2), T(1.3)));
     check("fmod(7, y)",         [](auto x, auto y, auto t) { using S = decltype(t); return fmod(S(7), y); }, V, I(2, T(2.2)));
+    check("remainder(x, y) crossing", [](auto x, auto y, auto t) { return remainder(x, y); }, U, W);
+    check("remainder(x, y) exact", [](auto x, auto y, auto t) { return remainder(x, y); }, V, I(3, 4));
+    check("remainder(x+5, y)",  [](auto x, auto y, auto t) { using S = decltype(t); return remainder(x + S(5), y); }, I(T(0.1), T(0.2)), I(2, T(2.05)));
+    check("remainder(x+5, -y)", [](auto x, auto y, auto t) { using S = decltype(t); return remainder(x + S(5), -y); }, I(T(0.1), T(0.2)), I(2, T(2.05)));
+    check("remainder(7, y)",    [](auto x, auto y, auto t) { using S = decltype(t); return remainder(S(7), y); }, V, I(2, T(2.2)));
     check("tgamma(x*y + 2)",    [](auto x, auto y, auto t) { using S = decltype(t); return tgamma(x*y + S(2)); }, U, V);
     check("lgamma(x) - lgamma(y)", [](auto x, auto y, auto t) { return lgamma(x) - lgamma(y); }, W, I(T(0.1), T(0.5)));
     check("pow(x, y)",          [](auto x, auto y, auto t) { return pow(x, y); }, W, U);
@@ -337,6 +347,51 @@ void run() {
         derivative_check("tgamma", cusvna::detail::tgamma_fn(), [](LD v) { return std::tgamma(v); });
         derivative_check("lgamma", cusvna::detail::lgamma_fn(), [](LD v) { return std::lgamma(v); });
 
+        /* remquo: the quotient range contains rint(x/c) and the remainder is exact when it is known */
+        auto quotient_check = [&](const std::string& name, const I& X, const I& Y, const bool known) {
+            const auto a = cusvna::AA<T>::template from_interval<4>(X);
+            const auto b = cusvna::AA<T>::template from_interval<5>(Y);
+            int lo, hi, slo, shi;
+            const auto r = remquo(a, b, &lo, &hi);
+            const auto rs = remquo(a, Y.a, &slo, &shi);
+            ++checks;
+            if (known != (lo == hi) || (Y.a == Y.b && (slo != lo || shi != hi))) {
+                fail(std::string(type_name<T>()) + " remquo " + name + ": unexpected quotient range [" + std::to_string(lo) + ", " + std::to_string(hi) + "]");
+            }
+            if (lo == hi && !((r - (a - b*T(lo))).affine_radius() == T(0))) {
+                fail(std::string(type_name<T>()) + " remquo " + name + ": remainder is not x - quo*y");
+            }
+            for (int i = 0; i <= 16; ++i) {
+                for (int j = 0; j <= 16; ++j) {
+                    const LD u = LD(T(LD(X.a) + (LD(X.b) - LD(X.a)) * i / 16));
+                    const LD v = LD(T(LD(Y.a) + (LD(Y.b) - LD(Y.a)) * j / 16));
+                    const LD n = std::nearbyint(u / v);
+                    const LD ns = std::nearbyint(u / LD(Y.a));
+                    if (n < lo || n > hi || ns < slo || ns > shi) {
+                        fail(std::string(type_name<T>()) + " remquo " + name + ": quotient not in range");
+                        return;
+                    }
+                }
+            }
+        };
+        quotient_check("known", I(T(2.1), T(2.4)), I(T(0.75), T(0.75)), true);
+        quotient_check("known affine", I(T(4.1), T(4.2)), I(2, T(2.05)), true);
+        quotient_check("negative", I(T(-4.2), T(-4.1)), I(2, T(2.05)), true);
+        quotient_check("half crossing", I(T(5.1), T(5.2)), I(2, T(2.05)), false);
+        quotient_check("ambiguous", I(T(2.1), T(2.4)), I(T(0.9), T(1)), false);
+        quotient_check("ambiguous scalar", I(T(2.1), T(2.4)), I(T(0.5), T(0.5)), false);
+        quotient_check("wide", I(T(21), T(24)), I(T(0.9), T(1)), false);
+        {
+            int lo, hi;
+            const auto a = cusvna::AA<T>::template from_interval<4>(I(1, 2));
+            const auto b = cusvna::AA<T>::template from_interval<5>(I(-1, 1));
+            const auto r = remquo(a, b, &lo, &hi);
+            ++checks;
+            if (!r.is_entire() || lo != std::numeric_limits<int>::min() || hi != std::numeric_limits<int>::max()) {
+                fail(std::string(type_name<T>()) + " remquo by zero");
+            }
+        }
+        
         /* interval utilities */
         checks += 6;
         if (!(cusvna::hull(I(0, 1), I(3, 4)).a == T(0) && cusvna::hull(I(0, 1), I(3, 4)).b == T(4))) { fail("hull"); }

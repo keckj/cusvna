@@ -1083,20 +1083,58 @@ namespace detail {
         return make_range(T(0), T(1));
     }
     
-    /* fmod(x, c) = x - trunc(x/c)*c, exactly x - n*c when trunc(x/c) = n is constant over X */
+    /* x - trunc(x), exactly x - n when trunc(x) = n is constant over X */
     template <typename T>
-    __host__ __device__ inline Approx<T> approx_fmod(const R<T>& X, const T err, const T c) {
+    __host__ __device__ inline Approx<T> approx_modf(const R<T>& X, const T err) {
+        if (!is_finite(X)) { return Approx<T>::make_entire(); }
+        const T n = ::trunc(X.a);
+        if (n == ::trunc(X.b)) {
+            return Approx<T>::make_affine(T(1), -n, err);
+        }
+        /* the fractional part has the sign of x */
+        return make_range(X.a >= T(0) ? T(0) : T(-1), X.b <= T(0) ? T(0) : T(1));
+    }
+    
+    /* range of x - n*c for any x in X: the remainder of fmod (n = trunc(x/c)) has the sign of x and is
+       smaller than |c|, the remainder of remainder (n = rint(x/c)) is at most |c|/2 in magnitude */
+    template <typename T>
+    __host__ __device__ inline R<T> remainder_range(const trunc_fn&, const R<T>& X, const T m) { 
+        return R<T>(X.a >= T(0) ? T(0) : -m, X.b <= T(0) ? T(0) : m);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline R<T> remainder_range(const rint_fn&, const R<T>& X, const T m) { 
+        const T h = mul_up(m, T(0.5));
+        return R<T>(-h, h);
+    }
+    
+    /* x - n*c with n = Fn(x/c) (trunc for fmod, rint for remainder), exactly x - n*c when n is constant 
+       over X. The range of n is returned in quotient (entire if unknown). */
+    template <typename Fn, typename T>
+    __host__ __device__ inline Approx<T> approx_reduction(const R<T>& X, const T err, const T c, R<T>* quotient = nullptr) {
+        if (quotient) { *quotient = R<T>(-infinity<T>(), infinity<T>()); }
         if (!is_finite(X) || !is_finite(c) || c == T(0)) { return Approx<T>::make_entire(); }
+        const Fn fn;
         const R<T> Q = X / point(c);
-        const T n = ::trunc(Q.a);
-        if (n == ::trunc(Q.b)) {
+        const T n = fn(Q.a);
+        if (quotient) { *quotient = R<T>(n, fn(Q.b)); }
+        if (n == fn(Q.b)) {
             const T p = mul_rn(n, c);
             const T e = (n == T(0) ? T(0) : (::fabs(p) < fp<T>::tiny() ? error_bound(p) : T(::fabs(two_prod_error(n, c, p)))));
             return Approx<T>{T(1), -p, e, err, false};
         }
-        /* the result has the sign of x and is smaller than |c| in magnitude */
-        const T m = ::fabs(c);
-        return make_range(X.a >= T(0) ? T(0) : -m, X.b <= T(0) ? T(0) : m);
+        const R<T> range = remainder_range(fn, X, T(::fabs(c)));
+        return make_range(range.a, range.b);
+    }
+    
+    template <typename T>
+    __host__ __device__ inline Approx<T> approx_fmod(const R<T>& X, const T err, const T c) { return approx_reduction<trunc_fn>(X, err, c); }
+    
+    /* range of an integer valued interval as ints, out of range bounds (or nans) are saturated */
+    template <typename T>
+    __host__ __device__ inline void integer_range(const R<T>& q, int* lo, int* hi) {
+        if (lo) { *lo = (q.a >= T(-2147483648.0) && q.a < T(2147483648.0) ? int(q.a) : cuda::std::numeric_limits<int>::min()); }
+        if (hi) { *hi = (q.b >= T(-2147483648.0) && q.b < T(2147483648.0) ? int(q.b) : cuda::std::numeric_limits<int>::max()); }
     }
 
 

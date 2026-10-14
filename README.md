@@ -58,6 +58,8 @@ __device__ bool may_contain_root(const Interval& X, const Interval& Y) {
 | `atan2(y, x)` | whole range `[-pi, pi]` when the input box meets the branch cut `y = 0, x <= 0` |
 | `pow(x, y)`, `pow(c, y)` with an affine exponent | `exp(y*log(x))`, for `x > 0` |
 | `floor`, `ceil`, `trunc`, `round`, `rint`, `fract`, `fmod(x, y)` | exact (`fract` and `fmod` stay correlated with their arguments) when no discontinuity is crossed, else the range of the result. `y` may be a scalar or a form |
+| `modf(x, &ip)`, `remainder(x, y)` | same as `fmod`, `y` may be a scalar or a form |
+| `remquo(x, y, &quo_lo, &quo_hi)` | returns the range of the whole integer quotient `rint(x/y)` (not only its low bits as in C), `quo_lo == quo_hi` when it is known |
 | `tgamma(x)`, `lgamma(x)` | for `x > 0` only (entire otherwise) |
 | `certainly_lt`, `certainly_le`, `certainly_gt`, `certainly_ge`, `possibly_zero` | rigorous predicates |
 | `hull`, `intersect`, `contains`, `subset`, `is_empty` | on `cusvna::Interval` |
