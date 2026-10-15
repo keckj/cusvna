@@ -33,6 +33,11 @@ Slang port of the AF1 forms is available as [vusvna](https://github.com/keckj/vu
   <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/enclosures.png" alt="Guaranteed enclosures of a curve and adaptive quadtree around a level set" width="800">
+  <br><em>Left: guaranteed enclosures of a function on 12 and 48 intervals. Right: adaptive quadtree around an implicit curve, cells proven empty are discarded at each level. Computed on the GPU with <code>cusvna::AA&lt;float&gt;</code> (1D) and <code>cusvna::AF1&lt;float,2&gt;</code> (2D).</em>
+</p>
+
 ## Getting started
 
 The examples compile their CUDA kernels at runtime with [CuPy](https://cupy.dev) (NVRTC) and only need an
