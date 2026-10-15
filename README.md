@@ -42,8 +42,9 @@ Slang port of the AF1 forms is available as [vusvna](https://github.com/keckj/vu
 
 The examples compile their CUDA kernels at runtime with [CuPy](https://cupy.dev) (NVRTC) and only need an
 NVIDIA GPU, the CUDA toolkit and Python. The ray tracing examples (`04_raytracing.py` and `05_levelset.py`)
-also need the [OptiX 7.4 SDK](https://developer.nvidia.com/designworks/optix/downloads/legacy) for
-[python-optix](https://github.com/mortacious/python-optix).
+also need [python-optix](https://github.com/keckj/python-optix) for OptiX 9.1 (NVIDIA driver R590 or later),
+installed by `requirements.txt`. The OptiX SDK does not need to be installed: python-optix downloads the
+OptiX 9.1 headers from [NVIDIA/optix-dev](https://github.com/NVIDIA/optix-dev) on first use.
 
 ```sh
 git clone --recursive https://github.com/keckj/cusvna.git
@@ -273,7 +274,7 @@ python3 examples/02_quadtree.py --fast                # AF1 forms, rounding erro
 
 `02_quadtree.py` to `05_levelset.py` take an optional `af1` (default) or `aa` argument selecting the affine
 forms, and a `--rounding` option selecting the [rounding mode](#rounding-modes) (`--fast` for
-`--rounding ignore`). The examples never use fast math. The OptiX examples require the OptiX SDK and the
+`--rounding ignore`). The examples never use fast math. The OptiX examples require python-optix and the
 `python-optix` submodule.
 
 `05_levelset.py` opens a window, or renders offscreen with `--output image.png` (see `--help` for the time,

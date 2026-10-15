@@ -3,4 +3,4 @@
 	url = https://github.com/ogay/libaffa
 [submodule "ext/python-optix"]
 	path = ext/python-optix
-	url = https://github.com/mortacious/python-optix.git
+	url = https://github.com/keckj/python-optix.git

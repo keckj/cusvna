@@ -7,4 +7,4 @@ scikit-image
 glfw
 imgui
 screeninfo
-git+https://github.com/mortacious/python-optix
+git+https://github.com/keckj/python-optix
