@@ -6,7 +6,7 @@ to the include paths of nvcc or NVRTC and include <cusvna/aa.cuh>, <cusvna/af1.c
 
 import os
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 _package_dir = os.path.dirname(os.path.abspath(__file__))
 
