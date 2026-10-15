@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="logo/cusvna-logo.svg" alt="cusvna" width="600">
+  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/logo/cusvna-logo.svg" alt="cusvna" width="600">
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/keckj/cusvna/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="#installation"><img src="https://img.shields.io/badge/CUDA-11%2B-76B900?logo=nvidia&logoColor=white" alt="CUDA 11+"></a>
   <a href="#installation"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white" alt="C++17"></a>
   <a href="#installation"><img src="https://img.shields.io/badge/NVRTC-supported-76B900?logo=nvidia&logoColor=white" alt="NVRTC supported"></a>
@@ -30,7 +30,7 @@ Slang port of the AF1 forms is available as [vusvna](https://github.com/keckj/vu
 [vusvna](#vusvna).
 
 <p align="center">
-  <img src="figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
+  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
 ## Getting started
@@ -78,6 +78,18 @@ point numbers and on affine forms. Replacing `cusvna::AA<float>` by `cusvna::AF1
 
 cusvna is header-only: add the root of this repository to your include paths and include `<cusvna/aa.cuh>`
 and/or `<cusvna/af1.cuh>`.
+
+The headers are also available as a Python package, for instance to compile kernels at runtime with NVRTC:
+
+```sh
+python3 -m pip install cusvna
+python3 -m cusvna --include   # include directory to pass as -I to nvcc or NVRTC
+```
+
+```python
+import cusvna
+options = ("--std=c++17", f"-I{cusvna.get_include()}")  # plus the CUDA include directory
+```
 
 Requirements:
 
@@ -350,4 +362,4 @@ value) and no operation accounts for rounding errors.
 
 ## License
 
-cusvna is released under the [MIT License](LICENSE).
+cusvna is released under the [MIT License](https://github.com/keckj/cusvna/blob/main/LICENSE).

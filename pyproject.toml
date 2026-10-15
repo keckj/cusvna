@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cusvna"
+dynamic = ["version"]
+description = "Header-only CUDA C++17 library for rigorous affine and interval arithmetic with guaranteed error bounds."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jean-Baptiste Keck", email = "jbkeck@hotmail.com" }]
+keywords = ["cuda", "gpu", "affine arithmetic", "interval arithmetic", "range analysis", "nvrtc", "header-only"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+Repository = "https://github.com/keckj/cusvna"
+Issues = "https://github.com/keckj/cusvna/issues"
+
+[tool.setuptools]
+packages = ["cusvna"]
+package-dir = { "" = "python" }
+
+[tool.setuptools.dynamic]
+version = { attr = "cusvna.__version__" }

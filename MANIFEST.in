@@ -1,0 +1,2 @@
+include LICENSE README.md pyproject.toml setup.py
+include cusvna/*.cuh
