@@ -12,6 +12,7 @@ display_iterations = False
 
 script_dir = os.path.dirname(__file__)
 example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
+autodiff_include_path = os.path.join(example_include_path, 'ext', 'autodiff')
 cuda_src = os.path.join(script_dir, "cuda", "raytracing.cu")
 
 aspect_ratio = 1024.0 / 768.0
@@ -33,7 +34,7 @@ def create_acceleration_structure(ctx, bboxes):
 
 def create_module(ctx, pipeline_opts, form, rounding):
     compile_opts = ox.ModuleCompileOptions(debug_level=ox.CompileDebugLevel.FULL, opt_level=ox.CompileOptimizationLevel.LEVEL_0)
-    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), rounding) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
+    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), rounding) + nvrtc_arch_flags() + (f'-I{example_include_path}', f'-I{autodiff_include_path}')
     if form == 'af1':
         build_flags += ('-DCUSVNA_AF1',)
     module = ox.Module(ctx, cuda_src, compile_opts, pipeline_opts, build_flags)

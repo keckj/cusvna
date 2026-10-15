@@ -30,18 +30,18 @@ Slang port of the AF1 forms is available as [vusvna](https://github.com/keckj/vu
 [vusvna](#vusvna).
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
+  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/enclosures.png" alt="Guaranteed enclosures of a curve and adaptive quadtree around a level set" width="800">
+  <br><em>Left: guaranteed enclosures of a function on 12 and 48 intervals. Right: adaptive quadtree around an implicit curve, cells proven empty are discarded at each level. Computed on the GPU with <code>cusvna::AA&lt;float&gt;</code> (1D) and <code>cusvna::AF1&lt;float,2&gt;</code> (2D).</em>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/enclosures.png" alt="Guaranteed enclosures of a curve and adaptive quadtree around a level set" width="800">
-  <br><em>Left: guaranteed enclosures of a function on 12 and 48 intervals. Right: adaptive quadtree around an implicit curve, cells proven empty are discarded at each level. Computed on the GPU with <code>cusvna::AA&lt;float&gt;</code> (1D) and <code>cusvna::AF1&lt;float,2&gt;</code> (2D).</em>
+  <img src="https://raw.githubusercontent.com/keckj/cusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
 ## Getting started
 
 The examples compile their CUDA kernels at runtime with [CuPy](https://cupy.dev) (NVRTC) and only need an
-NVIDIA GPU, the CUDA toolkit and Python. The ray tracing examples (`04_raytracing.py` and `05_levelset.py`)
+NVIDIA GPU, the CUDA toolkit and Python. The ray tracing examples (`04_raytracing.py` to `06_eigen_levelset.py`)
 also need [python-optix](https://github.com/keckj/python-optix) for OptiX 9.1 (NVIDIA driver R590 or later),
 installed by `requirements.txt`. The OptiX SDK does not need to be installed: python-optix downloads the
 OptiX 9.1 headers from [NVIDIA/optix-dev](https://github.com/NVIDIA/optix-dev) on first use.
@@ -262,6 +262,7 @@ The `examples` directory contains Python scripts that compile CUDA kernels at ru
 | `03_octtree.py` | adaptive octree refinement around an implicit surface, meshed with marching cubes |
 | `04_raytracing.py` | ray tracing of implicit surfaces with OptiX |
 | `05_levelset.py` | interactive OptiX viewer of level sets |
+| `06_eigen_levelset.py` | level sets written with Eigen matrices (Menger sponge, spectrahedron, trefoil knot) in the viewer of `05_levelset.py` |
 
 With the virtual environment of [Getting started](#getting-started) activated:
 
@@ -272,10 +273,12 @@ python3 examples/02_quadtree.py --rounding emulated   # AF1 forms, emulated roun
 python3 examples/02_quadtree.py --fast                # AF1 forms, rounding errors ignored
 ```
 
-`02_quadtree.py` to `05_levelset.py` take an optional `af1` (default) or `aa` argument selecting the affine
-forms, and a `--rounding` option selecting the [rounding mode](#rounding-modes) (`--fast` for
+`02_quadtree.py` to `06_eigen_levelset.py` take an optional `af1` (default) or `aa` argument selecting the
+affine forms (`af1` only for `06_eigen_levelset.py`), and a `--rounding` option selecting the [rounding mode](#rounding-modes) (`--fast` for
 `--rounding ignore`). The examples never use fast math. The OptiX examples require python-optix and the
-`python-optix` submodule.
+`python-optix` and `autodiff` submodules: the normals of the level sets are their exact gradients, computed
+in the kernels by forward automatic differentiation with
+[autodiff for CUDA and NVRTC](https://github.com/keckj/autodiff).
 
 `05_levelset.py` opens a window, or renders offscreen with `--output image.png` (see `--help` for the time,
 mode, method, samples and size). `05_levelset.py --benchmark` times the rendering offscreen at 1 spp over the
@@ -293,6 +296,14 @@ The shapes cast shadows and are antialiased by accumulating jittered samples whi
 | `+`/`-`, `UP`/`DOWN` | animation speed |
 | left / right mouse button, wheel | orbit, look around, zoom |
 | `Q`, `ESC` | quit |
+
+`06_eigen_levelset.py` has the same options and keys. Its shapes are written with [Eigen](https://eigen.tuxfamily.org)
+vectors and matrices of AF1 forms (and of autodiff numbers for the normals), compiled by NVRTC with
+[eigen-nvrtc](https://github.com/keckj/eigen-nvrtc) (`ext/eigen-nvrtc` submodule): a Menger sponge folded by
+Householder reflections and rotated by quaternions at each iteration, a spectrahedron given by the leading
+principal minors (determinants) of a 4x4 matrix that morphs from a tetrahedron to a ball and to the dual
+tetrahedron, and ellipsoidal beads (quadratic forms) sliding along a trefoil knot. AA forms cannot be Eigen
+scalars, their type changes with each nonlinear operation. It renders in 17 ms per frame with `--benchmark`.
 
 ## Performance
 

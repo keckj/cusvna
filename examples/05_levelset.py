@@ -75,9 +75,16 @@ object_dtype = np.dtype([
 floor_y = -1.5
 
 # affine forms used by interval marching, 'af1' (cusvna::AF1) or 'aa' (cusvna::AA), and rounding mode of
-# cusvna, 'native', 'emulated' or 'ignore' (see utils.rounding_modes), set in __main__
+# cusvna, 'native', 'emulated' or 'ignore' (see utils.rounding_modes), set by main()
 form = 'af1'
 rounding = 'native'
+
+# CUDA source of the shapes (it includes cuda/levelset_renderer.cuh), additional include paths and objects of
+# the scene (host and device copies), set by main()
+cuda_file = 'levelset.cu'
+include_paths = ()
+objects = None
+d_objects = None
 
 def make_scene():
     """A gyroid ball surrounded by a ring of animated level sets, standing above a checkered floor."""
@@ -103,9 +110,6 @@ def compute_bboxes(objects):
     floor = (objects['shape'] == Shape.FLOOR)
     bboxes[floor] = (-50.0, floor_y - 1e-3, -50.0, 50.0, floor_y + 1e-3, 50.0)
     return bboxes
-
-objects = make_scene()
-d_objects = cp.asarray(objects.view(np.uint8))
 
 #------------------------------------------------------------------------------
 # Local types
@@ -268,7 +272,7 @@ def init_launch_params(state):
     state.params.rendering_mode = RenderingMode.SHADED
     state.params.time = 0.0
     state.params.marching_method = MarchingMethod.ROOT_WINDOW
-    state.params.samples_per_pixel = 2
+    state.params.samples_per_pixel = 1
 
 def handle_camera_update(state):
     if not state.camera_changed:
@@ -364,12 +368,12 @@ def display_overlay(state, state_update_time, render_time, display_time):
     return do_update
 
 
-def init_camera_state(state):
+def init_camera_state(state, eye=(0, 6.0, -12.5), look_at=(0, -0.6, 0), fov_y=35):
     camera = state.camera
-    camera.eye = (0, 6.0, -12.5)
-    camera.look_at = (0, -0.6, 0)
+    camera.eye = eye
+    camera.look_at = look_at
     camera.up = (0, 1, 0)
-    camera.fov_y = 35
+    camera.fov_y = fov_y
     state.camera_changed = True
 
     trackball = state.trackball
@@ -399,10 +403,12 @@ def create_module(state):
             max_register_count=ox.ModuleCompileOptions.DEFAULT_MAX_REGISTER_COUNT,
             opt_level=opt_level, debug_level=debug_level)
 
-    cuda_source = os.path.join(script_dir, 'cuda', 'levelset.cu')
+    cuda_source = os.path.join(script_dir, 'cuda', cuda_file)
 
     example_include_path = os.path.realpath(os.path.join(script_dir, '..'))
-    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), rounding) + nvrtc_arch_flags() + (f'-I{example_include_path}',)
+    autodiff_include_path = os.path.join(example_include_path, 'ext', 'autodiff')
+    build_flags = math_flags(ox.module.get_default_nvrtc_compile_flags(std=17, rdc=True), rounding) + nvrtc_arch_flags() + (f'-I{example_include_path}', f'-I{autodiff_include_path}')
+    build_flags += tuple(f'-I{path}' for path in include_paths)
     if form == 'af1':
         build_flags += ('-DCUSVNA_AF1',)
 
@@ -503,7 +509,7 @@ def add_arguments(parser):
     parser.add_argument('--time', type=float, default=0.0, help="animation time of the image (with --output)")
     parser.add_argument('--mode', choices=[m.name.lower() for m in RenderingMode], default='shaded')
     parser.add_argument('--method', choices=[m.name.lower() for m in MarchingMethod], default='root_window')
-    parser.add_argument('--spp', type=int, default=2, help="samples per pixel and per frame")
+    parser.add_argument('--spp', type=int, default=1, help="samples per pixel and per frame")
     parser.add_argument('--size', type=int, nargs=2, default=(1024, 768), metavar=('WIDTH', 'HEIGHT'))
     parser.add_argument('--benchmark', action='store_true',
                         help="time the rendering offscreen at 1 spp over the animation, see benchmark()")
@@ -511,9 +517,18 @@ def add_arguments(parser):
 #------------------------------------------------------------------------------
 # Main
 #------------------------------------------------------------------------------
-if __name__ == '__main__':
-    args = parse_example_arguments("Interval marching of animated level sets with OptiX.", add_arguments)
+def main(description="Interval marching of animated level sets with OptiX.", cuda_source='levelset.cu',
+         scene=make_scene, extra_include_paths=(), camera={}, window_name="Cusvna Interval Marching",
+         forms=('af1', 'aa')):
+    """Renders the objects returned by scene() with the shapes of cuda/<cuda_source>, either offscreen or
+    in a window. camera holds the arguments of init_camera_state(), extra_include_paths are given to NVRTC
+    and forms are the affine forms supported by the shapes."""
+    global form, rounding, cuda_file, include_paths, objects, d_objects
+    args = parse_example_arguments(description, add_arguments, forms)
     form, rounding = args.form, args.rounding
+    cuda_file, include_paths = cuda_source, tuple(extra_include_paths)
+    objects = scene()
+    d_objects = cp.asarray(objects.view(np.uint8))
     cusvna_logger.info(f"Setting up OptiX scene with {form.upper()} forms{rounding_description(rounding)}...")
 
     state = DynamicGeometryState()
@@ -523,7 +538,7 @@ if __name__ == '__main__':
     buffer_format = BufferImageFormat.UCHAR4
     output_buffer_type = CudaOutputBufferType.enable_gl_interop()
 
-    init_camera_state(state)
+    init_camera_state(state, **camera)
     init_launch_params(state)
     state.params.rendering_mode = RenderingMode[args.mode.upper()]
     state.params.marching_method = MarchingMethod[args.method.upper()]
@@ -539,16 +554,16 @@ if __name__ == '__main__':
     if args.benchmark:
         init_offscreen(state)
         benchmark(state)
-        sys.exit(0)
+        return
     elif args.output:
         init_offscreen(state)
         state.params.time = args.time
         launch_offscreen(state)
         offscreen_image(state).save(args.output)
         cusvna_logger.info(f"Image saved to {args.output}.")
-        sys.exit(0)
+        return
 
-    window, impl = init_ui("Cusvna Interval Marching", state.params.width, state.params.height)
+    window, impl = init_ui(window_name, state.params.width, state.params.height)
     glfw.set_mouse_button_callback(window, mouse_button_callback)
     glfw.set_cursor_pos_callback(window, cursor_position_callback)
     glfw.set_window_size_callback(window, window_size_callback)
@@ -582,7 +597,7 @@ if __name__ == '__main__':
         last_time = t0
         state.params.time = state.time
 
-        title = (f"Cusvna Interval Marching - {form.upper()}{'' if rounding == 'native' else ' ' + rounding + ' rounding'} - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
+        title = (f"{window_name} - {form.upper()}{'' if rounding == 'native' else ' ' + rounding + ' rounding'} - {RenderingMode(int(state.params.rendering_mode)).name.lower()}"
                  f" - {MarchingMethod(int(state.params.marching_method)).name.lower()}"
                  f" - {int(state.params.samples_per_pixel)} spp - speed x{state.speed:.2f}"
                  + (" - paused" if state.paused else ""))
@@ -624,3 +639,7 @@ if __name__ == '__main__':
 
     impl.shutdown()
     glfw.terminate()
+
+
+if __name__ == '__main__':
+    main()

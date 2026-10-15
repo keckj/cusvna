@@ -4,3 +4,9 @@
 [submodule "ext/python-optix"]
 	path = ext/python-optix
 	url = https://github.com/keckj/python-optix.git
+[submodule "ext/autodiff"]
+	path = ext/autodiff
+	url = https://github.com/keckj/autodiff.git
+[submodule "ext/eigen-nvrtc"]
+	path = ext/eigen-nvrtc
+	url = https://github.com/keckj/eigen-nvrtc.git

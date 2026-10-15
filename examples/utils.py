@@ -109,11 +109,11 @@ def rounding_description(rounding):
     return rounding_modes[rounding][1]
 
 
-def parse_example_arguments(description, add_arguments=None):
-    """Command line of the graphical examples: affine forms and rounding mode. add_arguments(parser) adds the
-    arguments specific to an example."""
+def parse_example_arguments(description, add_arguments=None, forms=('af1', 'aa')):
+    """Command line of the graphical examples: affine forms (among forms) and rounding mode.
+    add_arguments(parser) adds the arguments specific to an example."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('form', nargs='?', default='af1', choices=('af1', 'aa'),
+    parser.add_argument('form', nargs='?', default='af1', choices=forms,
                         help="affine forms: af1 for cusvna::AF1 (single error term, default) or aa for cusvna::AA "
                              "(full affine arithmetic)")
     rounding = parser.add_mutually_exclusive_group()

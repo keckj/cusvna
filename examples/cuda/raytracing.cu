@@ -7,6 +7,8 @@
 #include <cusvna/aa.cuh>
 #include <cusvna/af1.cuh>
 
+#include <autodiff/forward/real.hpp>
+
 #define float3_as_ints( u ) __float_as_int( u.x ), __float_as_int( u.y ), __float_as_int( u.z )
 
 namespace levelset {
@@ -59,10 +61,17 @@ __device__ float f(const float3& p, const float3& origin, const float radius) {
     return f(p.x, p.y, p.z, origin, radius);
 }
 
+/* normal of the level set at p: exact gradient of f, by forward automatic differentiation */
 __device__ float3 df(const float3& p, const float3& origin, const float radius) {
-    /* fake normal, just used for shading */
-    const float3 dx = p - origin;
-    return dx / norm3df(dx.x, dx.y, dx.z);
+    using autodiff::at;
+    using autodiff::derivative;
+    using autodiff::wrt;
+    using real = autodiff::Real<1, float>;
+    const auto F = [&](const real& x, const real& y, const real& z) { return f(x, y, z, origin, radius); };
+    real x = p.x, y = p.y, z = p.z;
+    return normalize(make_float3(derivative(F, wrt(x), at(x, y, z)),
+                                 derivative(F, wrt(y), at(x, y, z)),
+                                 derivative(F, wrt(z), at(x, y, z))));
 }
 
 
