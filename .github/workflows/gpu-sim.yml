@@ -1,0 +1,84 @@
+name: GPU Simulator
+
+# Optional, non-required check. The hosted runners have no GPU, so this builds
+# the two device variants of the soundness test (tests/test5.cu with
+# CUSVNA_TEST_DEVICE, ctest names soundness_device and soundness_af1_device),
+# which evaluate the AA and AF1 forms inside a CUDA kernel, and runs them on a
+# simulated NVIDIA H100 (https://github.com/pantheongpu/pantheonsim). A
+# simulator cannot reproduce hardware-specific behavior or timing, so it
+# complements real-GPU testing and does not replace it.
+#
+# The other ctest entries evaluate the forms in host code only (tests 0 to 4
+# make no CUDA runtime calls, and soundness and soundness_af1 are the host
+# variants of test5), so they are not run here.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "cusvna/**"
+      - "tests/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/gpu-sim.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  device-tests:
+    name: Device soundness tests (simulated H100)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # tests/CMakeLists.txt needs libaffa; the other submodules are not used.
+      - name: Fetch libaffa
+        run: git submodule update --init --depth 1 ext/libaffa
+
+      - name: Set up the simulated GPU and CUDA toolkit
+        uses: pantheongpu/setup-pantheonsim@deff5781e8adfd83dec98dd5242dcbc96a564773 # v0.1.10
+        with:
+          gpu: nvidia/h100
+          cuda-toolkit: "13.0"
+
+      # The project sets no architecture. The simulator runs PTX only
+      # (90-virtual) and needs a shared CUDA runtime.
+      - name: Configure
+        run: |
+          cmake -B build -S . \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc \
+                -DCUDAToolkit_ROOT=/usr/local/cuda-13.0 \
+                -DCMAKE_CUDA_ARCHITECTURES=90-virtual \
+                -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared
+
+      - name: Build
+        run: cmake --build build --target test7 test8 -j3
+
+      # A wrong-architecture run can print a VirtualGPU error and still exit 0,
+      # so the output is searched for device problems as well. The test prints
+      # a failure count, and the simulator's per-launch counters show that the
+      # evaluate_kernel launches ran (the full log is long, so only a summary
+      # is printed).
+      - name: Run the device tests
+        working-directory: build
+        run: |
+          vgpu run --counters ctest -R '_device$' --output-on-failure -V > ../ctest.log 2>&1 || { tail -n 100 ../ctest.log; exit 1; }
+          grep -E "initialized|checks, .* failure|Test +#|tests passed" ../ctest.log
+          if grep -qiE "VirtualGPU error|no device|no CUDA-capable|kernel failed|cudaMalloc failed|skipped|not run" ../ctest.log; then
+            echo "::error::the run reported a device problem or a skipped test"; exit 1
+          fi
+          grep -q "100% tests passed, 0 tests failed out of 2" ../ctest.log
+          test "$(grep -c ' checks, 0 failure(s)\.' ../ctest.log)" = 2
+          launches=$(grep -c "\[vgpu\]\[counters\] .*evaluate_kernel" ../ctest.log)
+          echo "evaluate_kernel launches recorded by the simulator: $launches"
+          test "$launches" -ge 2
